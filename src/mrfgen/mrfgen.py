@@ -1657,14 +1657,25 @@ def run_gdaladdo(overview_resampling, mrf_filename, overview_levels, zlevels):
         zlevels -- The number of zlevels included in the MRF
     """
 
-    idx_filename = mrf_filename.replace(".mrf", ".idx")
+    # Strip GDAL subdataset suffix (e.g. :MRF:Z0) for filesystem operations
+    clean_mrf_filename = mrf_filename.split(':MRF:')[0]
+
+    #idx_filename = mrf_filename.replace(".mrf", ".idx")
+    idx_filename = clean_mrf_filename.replace(".mrf", ".idx")
     compare_time = time.strftime("%Y%m%d.%H%M%S", time.localtime())
-    old_stats = os.stat(idx_filename)
+
+    # Ensure file exists before stat to avoid FileNotFoundError on fresh runs
+    if os.path.exists(idx_filename):
+        old_stats = os.stat(idx_filename)
+    else:
+        # Fallback if idx doesn't exist yet (should exist for valid MRF)
+        old_stats = type('obj', (object,), {'st_size': 0})
 
     # Get largest x,y dimension of MRF, usually x.
     try:
         # Open file.
-        mrf_file = open(mrf_filename, "r+")
+        #mrf_file = open(mrf_filename, "r+")
+        mrf_file = open(clean_mrf_filename, "r+")
     except IOError:
         mssg = str().join(["Cannot read:  ", mrf_filename])
         log_sig_exit("ERROR", mssg, sigevent_url)
