@@ -3294,7 +3294,7 @@ subprocess.call(gdalbuildvrt_command_list, stderr=gdalbuildvrt_stderr_file)
 # use gdalwarp if resize with resampling method is declared
 if resize_resampling != "":
     if target_y == "":
-        target_y = str(int(target_x) / 2)
+        target_y = str(int(target_x) // 2)
     gdal_warp_command_list = [
         "gdalwarp",
         "-of",
