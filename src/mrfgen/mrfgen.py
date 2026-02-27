@@ -657,7 +657,7 @@ def gdalmerge(
 
 
 def split_across_antimeridian(
-    tile, source_extents, antimeridian, xres, yres, working_dir
+    tile, source_extents, antimeridian, xres, yres, working_dir, resize_resampling="near"
 ):
     """
     Splits up a tile that crosses the antimeridian
@@ -683,13 +683,9 @@ def split_across_antimeridian(
 
     # Create VRT of input tile
     gdalbuildvrt_command_list = [
-        "gdalwarp",
-        "-overwrite",
+        "gdal_translate",
         "-of",
         "VRT",
-        "-tr",
-        xres,
-        yres,
         tile,
         temp_tile,
     ]
@@ -752,9 +748,13 @@ def split_across_antimeridian(
             "-overwrite",
             "-of",
             "VRT",
-            "-ts",
-            target_x,
-            target_y,
+            "-r",
+            resize_resampling,
+            "-ovr",
+            "NONE",
+            "-tr",
+            str(xres),
+            str(yres),
             "-te",
             str(Decimal(ulx)),
             str(Decimal(lry)),
@@ -799,9 +799,13 @@ def split_across_antimeridian(
             "-overwrite",
             "-of",
             "VRT",
-            "-ts",
-            target_x,
-            target_y,
+            "-r",
+            resize_resampling,
+            "-ovr",
+            "NONE",
+            "-tr",
+            str(xres),
+            str(yres),
             "-te",
             str(Decimal(antimeridian)),
             str(Decimal(lry)),
@@ -1186,7 +1190,7 @@ def run_mrf_insert(
                 t_xmax,
                 str((Decimal(t_xmax) - Decimal(t_xmin)) / Decimal(target_x)),
                 str((Decimal(t_ymin) - Decimal(t_ymax)) / Decimal(target_y)),
-                working_dir,
+                working_dir, resize_resampling,
             )
             if should_lock:
                 lock.up_read()
