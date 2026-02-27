@@ -668,7 +668,11 @@ def split_across_antimeridian(
         xres -- output x resolution
         yres -- output y resolution
         working_dir -- Directory to use for temporary files
+        resize_resampling - type of algorithm to apply
     """
+    if not resize_resampling:
+         resize_resampling = "near"
+    
     temp_tile = working_dir + os.path.basename(tile) + ".temp.vrt"
     log_info_mssg("Splitting across antimeridian with " + temp_tile)
     ulx, uly, lrx, lry = source_extents
@@ -1180,8 +1184,8 @@ def run_mrf_insert(
 
         elif target_epsg in ["EPSG:4326", "EPSG:3857"] and (
             (float(s_xmin) > float(s_xmax))
-            or (float(s_xmax) > float(t_xmax))
-            or (float(s_xmin) < float(t_xmin))
+            or (round(float(s_xmax), 4) > round(float(t_xmax), 4))
+            or (round(float(s_xmin), 4) < round(float(t_xmin), 4))
         ):
             log_info_mssg(tile + " crosses antimeridian")
             left_half, right_half = split_across_antimeridian(
