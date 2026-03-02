@@ -3057,6 +3057,7 @@ log_info_mssg(all_tiles_filename)
 # Begin GDAL processing.
 # -------------------------------------------------------------------------------
 
+
 # Convert date of the data into day of the year.  Requred for TWMS server.
 doy = get_doy_string(date_of_data)
 # Combine year and doy to conform to TWMS convention (yyyydoy).
@@ -3115,6 +3116,12 @@ remove_file(mrf_filename)
 remove_file(idx_filename)
 remove_file(out_filename)
 remove_file(vrt_filename)
+
+# Fix for GDAL 3.12+ (gdalwarp): Map legacy/alternative abbreviations to 'near'
+if resize_resampling.lower() in ['nnb', 'nearest']:
+    resize_resampling = 'near'
+elif resize_resampling.lower() == 'avg':
+    resize_resampling = 'average'
 
 # Check if this is an MRF insert update, if not then regenerate a new MRF
 mrf_list = []
