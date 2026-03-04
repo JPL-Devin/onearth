@@ -867,14 +867,13 @@ def crop_to_extents(tile, tile_extents, projection_extents, working_dir):
     """
     ulx, uly, lrx, lry = tile_extents
     xmin, ymin, xmax, ymax = projection_extents
-    if float(ulx) < float(xmin):
-        ulx = xmin
-    if float(uly) > float(ymax):
-        uly = ymax
-    if float(lrx) > float(xmax):
-        lrx = xmax
-    if float(lry) < float(ymin):
-        lry = ymin
+
+    # Clamp tile extents to the projection bounds and ensure they are cast as strings
+    ulx = str(max(float(ulx), float(xmin)))
+    uly = str(min(float(uly), float(ymax)))
+    lrx = str(min(float(lrx), float(xmax)))
+    lry = str(max(float(lry), float(ymin)))
+
     cut_tile = working_dir + os.path.basename(tile) + "._cut.vrt"
     gdalwarp_command_list = [
         "gdalwarp",
@@ -890,9 +889,19 @@ def crop_to_extents(tile, tile_extents, projection_extents, working_dir):
         cut_tile,
     ]
     log_the_command(gdalwarp_command_list)
-    subprocess.call(
+
+    # Execute the command and capture output to prevent silent failures
+    process = subprocess.Popen(
         gdalwarp_command_list, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-    )
+    )           
+    out, err = process.communicate()
+    
+    # Log an error if the crop fails
+    if process.returncode != 0:
+        log_sig_err("gdalwarp crop_to_extents failed with code {0}: {1}".format(
+            process.returncode, err.decode('utf-8', errors='ignore').strip()
+        ), sigevent_url)
+        
     return cut_tile
 
 
@@ -2839,6 +2848,12 @@ if source_epsg == "detect" or source_epsg != target_epsg:
             log_info_mssg("Creating VRT for input tile: " + tile)
 
             # if the source and target EPSGs are not the same, create a VRT
+  
+            # Fix legacy names so gdalwarp receives 'near' instead of 'nearest'
+            if reprojection_resampling.lower() in ['nnb', 'nearest']:
+                reprojection_resampling = 'near'
+            elif reprojection_resampling.lower() == 'avg':
+                reprojection_resampling = 'average'
 
             gdalwarp_command_list = [
                 "gdalwarp",
@@ -2846,6 +2861,8 @@ if source_epsg == "detect" or source_epsg != target_epsg:
                 "-overwrite",
                 "-of",
                 "vrt",
+                "-r",
+                reprojection_resampling,
                 "-s_srs",
                 s_epsg,
                 "-t_srs",
