@@ -345,6 +345,31 @@ class TestPeriods(unittest.TestCase):
         self.assertEqual(len(members), 1)
         new_period = list(members)[0].decode('utf-8')
         self.assertTrue(new_period.endswith('/PT12H'))
+    
+    def test_default_to_last(self):
+        # Add different dates but make sure lastest is set as default key
+        layer_key = "test_layer_default"
+        datetimes = [
+            '2023-09-07T00:41:00',
+            '2024-09-07T00:41:00',
+            '2026-10-10T00:27:00']
+
+        # Add oldest date
+        self.redis_client.zadd(layer_key + ":dates", {datetimes[-1]: 0})
+
+        # Run calculate without start, end, and keep_existing_periods
+        calculate_layer_periods(self.redis_client, layer_key, new_datetime=datetimes[1],debug=True)
+        # Run calculate with start, end, and keep_existing_periods, and without new_datetime
+        # Simulate varable time best key updates
+        calculate_layer_periods(self.redis_client, layer_key, new_datetime=None, 
+                                start_date=datetimes[0], end_date='2023-09-07T01:32:00',keep_existing_periods=True,debug=True)
+        
+
+        dates = self.redis_client.zrange(layer_key + ":dates", 0, -1)
+        default = self.redis_client.get(layer_key + ":default")
+        self.assertEqual(len(dates), 3)
+        self.assertTrue(dates[-1].decode('utf-8') == datetimes[-1])
+        self.assertTrue(default.decode('utf-8') == f'{datetimes[-1]}Z')
 
     @classmethod
     def tearDownClass(self):

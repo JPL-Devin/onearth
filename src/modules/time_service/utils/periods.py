@@ -389,29 +389,10 @@ def calculate_layer_periods(redis_cli, layer_key, new_datetime=None, expiration=
 
     
     # Update :default key
-    default_date = None
-    # Use most recent date of the most recent period
-    if len(calculated_periods) > 0:
-        default_date = sorted(calculated_periods)[-1].split('/')[1]
-
-    # If there are no periods, then use the last config time
-    else:
-        # Find the last time config that doesn't have 'DETECT'
-        last_config = None
-        for config in reversed(configs):
-            if 'DETECT' not in config:
-                last_config = config
-                break
-        if last_config:
-            last_config_parts = last_config.split('/')
-            for part in reversed(last_config_parts):
-                if re.search(r'\d{4}-\d{2}-\d{2}', part):
-                    default_date = part
-    if default_date:
-        if len(calculated_periods) > 0 and 'PT' not in calculated_periods[-1]:
-            default_date = re.sub(r'T00:00:00Z?', '', default_date)
-        for key in layer_keys:
-            redis_cli.set(f'{key}:default', default_date)
+    last_date = redis_cli.zrange(f'{key}:dates', -1, -1)
+    if (last_date):
+        default_date = f'{last_date.decode("utf-8")}Z'
+        redis_cli.set(f'{key}:default', default_date)
     else:
         print('Warning: no default date could be determined.')
     
