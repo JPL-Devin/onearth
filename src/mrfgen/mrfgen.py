@@ -3308,6 +3308,14 @@ if target_x != "":
     gdalbuildvrt_command_list.append("-tr")
     gdalbuildvrt_command_list.append(xres)
     gdalbuildvrt_command_list.append(yres)
+    if resize_resampling != "":
+        buildvrt_resampling = resize_resampling
+        # gdalbuildvrt specifically expects "nearest" instead of "near"
+        if buildvrt_resampling.lower() == "near":
+            buildvrt_resampling = "nearest"
+            
+        gdalbuildvrt_command_list.append("-r")
+        gdalbuildvrt_command_list.append(buildvrt_resampling)
 
 if vrtnodata != "":
     # set the nodata values if provided

@@ -32,6 +32,7 @@ limitations under the License.
  <outsize>32768 32768</outsize>
  <overview_resampling>nnb</overview_resampling>
  <resize_resampling>near</resize_resampling>
+ <reprojection_resampling>near</reprojection_resampling>
  <target_epsg>3857</target_epsg>
  <source_epsg>4326</source_epsg>
  <extents>-180,-90,180,90</extents>
