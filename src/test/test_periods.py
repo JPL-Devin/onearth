@@ -354,6 +354,7 @@ class TestPeriods(unittest.TestCase):
             '2024-09-07T00:41:00',
             '2026-10-10T00:27:00']
 
+        # Test Subdaily
         # Add oldest date
         self.redis_client.zadd(layer_key + ":dates", {datetimes[-1]: 0})
 
@@ -362,14 +363,24 @@ class TestPeriods(unittest.TestCase):
         # Run calculate with start, end, and keep_existing_periods, and without new_datetime
         # Simulate varable time best key updates
         calculate_layer_periods(self.redis_client, layer_key, new_datetime=None, 
-                                start_date=datetimes[0], end_date='2023-09-07T01:32:00',keep_existing_periods=True,debug=True)
-        
+                                start_date=datetimes[0], end_date='2023-09-07T01:32:00',
+                                keep_existing_periods=True,debug=True)
 
-        dates = self.redis_client.zrange(layer_key + ":dates", 0, -1)
-        default = self.redis_client.get(layer_key + ":default")
-        self.assertEqual(len(dates), 3)
-        self.assertTrue(dates[-1].decode('utf-8') == datetimes[-1])
-        self.assertTrue(default.decode('utf-8') == f'{datetimes[-1]}Z')
+        layer_dates = self.redis_client.zrange(layer_key + ":dates", 0, -1)
+        layer_default = self.redis_client.get(layer_key + ":default")
+        self.assertEqual(len(layer_dates), 3)
+        self.assertTrue(layer_dates[-1].decode('utf-8') == datetimes[-1])
+        self.assertTrue(layer_default.decode('utf-8') == f'{datetimes[-1]}Z')
+
+        #Test Daily
+        date = '2026-12-01'
+        #self.redis_client.zadd(layer_key + ":dates", {f'{date}T00:00:00'})
+        calculate_layer_periods(self.redis_client, layer_key, f'{date}T00:00:00')
+        layer_dates = self.redis_client.zrange(layer_key + ":dates", 0, -1)
+        layer_default = self.redis_client.get(layer_key + ":default")
+        self.assertEqual(len(layer_dates), 4)
+        self.assertTrue(layer_dates[-1].decode('utf-8') == f'{date}T00:00:00')
+        self.assertTrue(layer_default.decode('utf-8') == date)
 
     @classmethod
     def tearDownClass(self):

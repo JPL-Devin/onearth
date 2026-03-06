@@ -392,6 +392,9 @@ def calculate_layer_periods(redis_cli, layer_key, new_datetime=None, expiration=
     last_date = redis_cli.zrange(f'{key}:dates', -1, -1)
     if (last_date and len(last_date) > 0):
         default_date = f'{last_date[0].decode("utf-8")}Z'
+        #Remove time if layer is not subdaily
+        if 'PT' not in configs[-1]:
+            default_date = re.sub(r'T00:00:00Z?', '', default_date)
         redis_cli.set(f'{key}:default', default_date)
     else:
         print('Warning: no default date could be determined.')
