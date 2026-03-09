@@ -387,18 +387,32 @@ def calculate_layer_periods(redis_cli, layer_key, new_datetime=None, expiration=
             if len(periods_to_remove) > 0:
                 redis_cli.zrem(f'{key}:periods', *periods_to_remove)
 
-    
     # Update :default key
-    last_date = redis_cli.zrange(f'{key}:dates', -1, -1)
-    if (last_date and len(last_date) > 0):
-        default_date = f'{last_date[0].decode("utf-8")}Z'
-        #Remove time if layer is not subdaily
-        if 'PT' not in configs[-1]:
-            default_date = re.sub(r'T00:00:00Z?', '', default_date)
+    default_date = None
+    last_config = None
+    # Check if end datetime is set in config
+    for config in reversed(configs):
+        elms = config.split('/')
+        if len(elms) == 3:
+            config_end = config.split('/')[-2]
+            if 'DETECT' not in config_end:
+                last_config = config_end
+                break
+    if last_config:
+        if re.search(r'\d{4}-\d{2}-\d{2}', last_config):
+            default_date = last_config
+    # Else use last date
+    else:
+        last_date = redis_cli.zrange(f'{key}:dates', -1, -1)
+        if last_date:
+            default_date = f'{last_date.decode("utf-8")}Z'
+            if 'PT' not in configs[-1]:
+                default_date = re.sub(r'T00:00:00Z?', '', default_date)
+    if default_date:
         redis_cli.set(f'{key}:default', default_date)
     else:
         print('Warning: no default date could be determined.')
-    
+
     print('Periods added to', layer_key)
 
 
