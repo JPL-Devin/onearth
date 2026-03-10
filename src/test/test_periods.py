@@ -368,19 +368,25 @@ class TestPeriods(unittest.TestCase):
 
         layer_dates = self.redis_client.zrange(layer_key + ":dates", 0, -1)
         layer_default = self.redis_client.get(layer_key + ":default")
-        self.assertEqual(len(layer_dates), 3)
-        self.assertTrue(layer_dates[-1].decode('utf-8') == datetimes[-1])
-        self.assertTrue(layer_default.decode('utf-8') == f'{datetimes[-1]}Z')
+        self.assertEqual(len(layer_dates), 3,
+                         f'Returned dates length of {len(layer_dates)} does not match expected length of 3')
+        self.assertTrue(layer_dates[-1].decode('utf-8') == datetimes[-1],
+                        f'Returned last date {layer_dates[-1].decode("utf-8")} does not match expected last date {datetimes[-1]}Z')
+        self.assertTrue(layer_default.decode('utf-8') == f'{datetimes[-1]}Z',
+                        f'Returned default date {layer_default.decode("utf-8")} does not match expected default date {datetimes[-1]}Z')
 
         #Test Daily
         date = '2026-12-01'
-        #self.redis_client.zadd(layer_key + ":dates", {f'{date}T00:00:00'})
+        self.redis_client.sadd(layer_key + ":config", 'DETECT/DETECT/P1D')
         calculate_layer_periods(self.redis_client, layer_key, f'{date}T00:00:00')
         layer_dates = self.redis_client.zrange(layer_key + ":dates", 0, -1)
         layer_default = self.redis_client.get(layer_key + ":default")
-        self.assertEqual(len(layer_dates), 4)
-        self.assertTrue(layer_dates[-1].decode('utf-8') == f'{date}T00:00:00')
-        self.assertTrue(layer_default.decode('utf-8') == date)
+        self.assertEqual(len(layer_dates), 4,
+                         f'Returned dates length of {len(layer_dates)} does not match expected length of 4')
+        self.assertTrue(layer_dates[-1].decode('utf-8') == f'{date}T00:00:00',
+                        f'Returned last date {layer_dates[-1].decode("utf-8")} does not match expected last date {date}T00:00:00')
+        self.assertTrue(layer_default.decode('utf-8') == date, 
+                        f'Returned default date {layer_default.decode("utf-8")} does not match expected default date {date}')
 
     @classmethod
     def tearDownClass(self):

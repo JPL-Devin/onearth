@@ -390,13 +390,15 @@ def calculate_layer_periods(redis_cli, layer_key, new_datetime=None, expiration=
     # Update :default key
     default_date = None
     last_config = None
+    has_time = True
     # Check if end datetime is set in config
     for config in reversed(configs):
-        elms = config.split('/')
-        if len(elms) == 3:
-            config_end = config.split('/')[-2]
-            if 'DETECT' not in config_end:
-                last_config = config_end
+        parts = config.split('/')
+        if len(parts) > 2:
+            if 'PT' not in parts[-1]:
+                has_time = False
+            if 'DETECT' not in parts[-2]:
+                last_config = parts[-2]
                 break
     if last_config:
         if re.search(r'\d{4}-\d{2}-\d{2}', last_config):
@@ -405,14 +407,17 @@ def calculate_layer_periods(redis_cli, layer_key, new_datetime=None, expiration=
     else:
         last_date = redis_cli.zrange(f'{key}:dates', -1, -1)
         if last_date and len(last_date) > 0:
-            default_date = f'{last_date[0].decode("utf-8")}Z'
-            if 'PT' not in configs[-1]:
-                default_date = re.sub(r'T00:00:00Z?', '', default_date)
+            default_date = last_date[0].decode("utf-8")
     if default_date:
+        if has_time:
+            default_date = f'{default_date}Z'
+        else:
+            default_date = re.sub(r'T00:00:00Z?', '', default_date)
+
         redis_cli.set(f'{key}:default', default_date)
     else:
         print('Warning: no default date could be determined.')
-    
+
     print('Periods added to', layer_key)
 
 
