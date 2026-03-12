@@ -686,6 +686,12 @@ def split_across_antimeridian(
         # this is the output lrx for the right cut
         lrx = str(Decimal(antimeridian) * -1 - (Decimal(antimeridian) - Decimal(lrx)))
 
+    # Calculate correct extents for GDAL 3.12+ -te flag
+    te_xmin = min(float(ulx), float(orig_lrx))
+    te_xmax = max(float(ulx), float(orig_lrx))
+    te_ymin = min(float(uly), float(lry))
+    te_ymax = max(float(uly), float(lry))
+
     # Create VRT of input tile
     gdalbuildvrt_command_list = [
         "gdalwarp",
@@ -696,10 +702,10 @@ def split_across_antimeridian(
         str(xres),
         str(yres),
         "-te", 
-        str(orig_lrx), # xmin (Source Lower Right X)
-        str(lry),      # ymin (Source Lower Right Y)
-        str(ulx),      # xmax (Source Upper Left X)
-        str(uly),      # ymax (Source Upper Left Y)
+        str(te_xmin),      # xmin (Source Lower Right X)
+        str(te_ymin),      # ymin (Source Lower Right Y)
+        str(te_xmax),      # xmax (Source Upper Left X)
+        str(te_ymax),      # ymax (Source Upper Left Y)
         tile,
         temp_tile,
     ]
