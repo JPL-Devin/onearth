@@ -668,14 +668,15 @@ def split_across_antimeridian(
         xres -- output x resolution
         yres -- output y resolution
         working_dir -- Directory to use for temporary files
-        resize_resampling - type of algorithm to apply
     """
     if not resize_resampling:
          resize_resampling = "near"
-    
+
     temp_tile = working_dir + os.path.basename(tile) + ".temp.vrt"
     log_info_mssg("Splitting across antimeridian with " + temp_tile)
     ulx, uly, lrx, lry = source_extents
+    orig_lrx = lrx
+
     if Decimal(lrx) <= Decimal(antimeridian):
         # create a new lrx on the other side of the antimeridian
         new_lrx = str(Decimal(lrx) + Decimal(antimeridian) * 2)
@@ -687,9 +688,18 @@ def split_across_antimeridian(
 
     # Create VRT of input tile
     gdalbuildvrt_command_list = [
-        "gdal_translate",
+        "gdalwarp",
+        "-overwrite",
         "-of",
         "VRT",
+        "-tr",
+        str(xres),
+        str(yres),
+        "-te", 
+        str(orig_lrx), # xmin (Source Lower Right X)
+        str(lry),      # ymin (Source Lower Right Y)
+        str(ulx),      # xmax (Source Upper Left X)
+        str(uly),      # ymax (Source Upper Left Y)
         tile,
         temp_tile,
     ]
@@ -752,13 +762,9 @@ def split_across_antimeridian(
             "-overwrite",
             "-of",
             "VRT",
-            "-r",
-            resize_resampling,
-            "-ovr",
-            "NONE",
-            "-tr",
-            str(xres),
-            str(yres),
+            "-ts",
+            target_x,
+            target_y,
             "-te",
             str(Decimal(ulx)),
             str(Decimal(lry)),
@@ -803,13 +809,9 @@ def split_across_antimeridian(
             "-overwrite",
             "-of",
             "VRT",
-            "-r",
-            resize_resampling,
-            "-ovr",
-            "NONE",
-            "-tr",
-            str(xres),
-            str(yres),
+            "-ts",
+            target_x,
+            target_y,
             "-te",
             str(Decimal(antimeridian)),
             str(Decimal(lry)),

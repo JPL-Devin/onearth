@@ -30,9 +30,9 @@ limitations under the License.
  <mrf_blocksize>256</mrf_blocksize>
  <mrf_compression_type>PPNG</mrf_compression_type>
  <outsize>32768 32768</outsize>
- <overview_resampling>mode</overview_resampling>
- <resize_resampling>mode</resize_resampling>
- <reprojection_resampling>mode</reprojection_resampling>
+ <overview_resampling>near</overview_resampling>
+ <resize_resampling>nearest</resize_resampling>
+ <reprojection_resampling>near</reprojection_resampling>
  <target_epsg>3857</target_epsg>
  <source_epsg>4326</source_epsg>
  <extents>-180,-90,180,90</extents>
