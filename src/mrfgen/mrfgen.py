@@ -1740,11 +1740,11 @@ def run_gdaladdo(overview_resampling, mrf_filename, overview_levels, zlevels):
         # Get largest dimension, usually X.
         actual_size = max([float(sizeX), float(sizeY)])
 
-    # Fix for GDAL 3.12+: Map legacy resampling abbreviations to full names
-    if overview_resampling.lower() in ['nnb', 'near']:
+    # Fix for GDAL 3.12+: Map legacy resampling abbreviation to full names
+    # Note that "Nnb" and "Avg" are overview algorithms implemented in MRF Driver
+    # thus we don't alter these names.
+    if overview_resampling.lower() in ['near']:
         overview_resampling = 'nearest'
-    elif overview_resampling.lower() == 'avg':
-        overview_resampling = 'average'
 
     # Create the gdaladdo command.
     gdaladdo_command_list = ["gdaladdo", "-r", overview_resampling, str(mrf_filename)]
