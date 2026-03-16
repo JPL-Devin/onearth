@@ -1,12 +1,12 @@
 ARG ONEARTH_VERSION
 FROM nasagibs/onearth-deps:$ONEARTH_VERSION
 
-ARG MRF_VERSION=3.0.1
-ARG GDAL_VERSION=3.6.4
 ARG ALMALINUX_VERSION=10
+ARG GDAL_VERSION=3.12.1
 ENV GDAL_VERSION=$GDAL_VERSION
-ARG GIBS_GDAL_RELEASE=3
+ARG GIBS_GDAL_RELEASE=1
 ENV GIBS_GDAL_RELEASE=$GIBS_GDAL_RELEASE
+ARG MRF_VERSION=3.0.1
 
 RUN dnf install -y \
         proj-9.6.0 \
@@ -95,13 +95,15 @@ RUN git clone --depth 1 --branch v${MRF_VERSION} https://github.com/nasa-gibs/mr
     rm -rf /tmp/*
 
 # Mapserver
+# Remove the old CMake 3.20 from /usr/local so the shell finds the new CMake 3.30 in /usr/bin
+RUN rm -f /usr/local/bin/cmake /usr/local/bin/ctest /usr/local/bin/cpack
 RUN dnf install -y harfbuzz-devel-8.4.0 cairo-devel-1.18.2
 WORKDIR /tmp
-RUN wget http://download.osgeo.org/mapserver/mapserver-8.2.2.tar.gz
-RUN tar xf mapserver-8.2.2.tar.gz
-WORKDIR /tmp/mapserver-8.2.2
+RUN wget http://download.osgeo.org/mapserver/mapserver-8.6.0.tar.gz
+RUN tar xf mapserver-8.6.0.tar.gz
+WORKDIR /tmp/mapserver-8.6.0
 RUN mkdir build
-WORKDIR /tmp/mapserver-8.2.2/build
+WORKDIR /tmp/mapserver-8.6.0/build
 RUN cmake -DCMAKE_INSTALL_PREFIX=/usr/local -DWITH_POSTGIS=0 -DWITH_GIF=0 -DWITH_KML=1 -DWITH_PROTOBUFC=0 ../
 RUN make && make install
 RUN echo '/usr/local/lib' > /etc/ld.so.conf.d/mapserver.conf
