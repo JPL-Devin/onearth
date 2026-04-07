@@ -3,7 +3,7 @@ FROM nasagibs/onearth-deps:2.9.6
 
 ARG MRF_VERSION=3.0.1
 ARG ALMALINUX_VERSION=10
-ARG GDAL_VERSION=3.12.1
+ARG GDAL_VERSION=3.12.3
 ENV GDAL_VERSION=$GDAL_VERSION
 ARG GIBS_GDAL_RELEASE=1
 ENV GIBS_GDAL_RELEASE=$GIBS_GDAL_RELEASE
@@ -116,11 +116,11 @@ RUN git clone --depth 1 --branch v${MRF_VERSION} https://github.com/nasa-gibs/mr
 # Mapserver
 RUN dnf install -y harfbuzz-devel-8.4.0 cairo-devel-1.18.2
 WORKDIR /tmp
-RUN wget http://download.osgeo.org/mapserver/mapserver-8.6.0.tar.gz && \
-    tar xf mapserver-8.6.0.tar.gz
-WORKDIR /tmp/mapserver-8.6.0
+RUN wget http://download.osgeo.org/mapserver/mapserver-8.6.1.tar.gz && \
+    tar xf mapserver-8.6.1.tar.gz
+WORKDIR /tmp/mapserver-8.6.1
 RUN mkdir build
-WORKDIR /tmp/mapserver-8.6.0/build
+WORKDIR /tmp/mapserver-8.6.1/build
 RUN cmake -DCMAKE_INSTALL_PREFIX=/usr/local -DWITH_POSTGIS=0 -DWITH_GIF=0 -DWITH_KML=1 -DWITH_PROTOBUFC=0 ../
 RUN make && make install
 RUN echo '/usr/local/lib' > /etc/ld.so.conf.d/mapserver.conf
