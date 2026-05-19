@@ -620,23 +620,23 @@ class OnearthTimeService:
                 try:
                     limit = int(limit)
                 except ValueError:
-                    return self.send_response(200, json.dumps({"err_msg": "Limit must be an integer"}))
+                    return self.send_response(400, json.dumps({"err_msg": "Limit must be an integer"}))
             
             if periods_start:
                 try:
                     if not re.match(self.DATE_TEMPLATE, periods_start) and not re.match(self.DATETIME_TEMPLATE, periods_start):
-                        return self.send_response(200, json.dumps({"err_msg": "Invalid periods start date"}))
+                        return self.send_response(400, json.dumps({"err_msg": "Invalid periods start date"}))
                     datetime.fromisoformat(periods_start.replace('Z', '+00:00')).replace(tzinfo=None)
                 except ValueError:
-                    return self.send_response(200, json.dumps({"err_msg": "Invalid periods start date"}))
+                    return self.send_response(400, json.dumps({"err_msg": "Invalid periods start date"}))
                 
             if periods_end:
                 try:
                     if not re.match(self.DATE_TEMPLATE, periods_end) and not re.match(self.DATETIME_TEMPLATE, periods_end):
-                        return self.send_response(200, json.dumps({"err_msg": "Invalid periods end date"}))
+                        return self.send_response(400, json.dumps({"err_msg": "Invalid periods end date"}))
                     datetime.fromisoformat(periods_end.replace('Z', '+00:00')).replace(tzinfo=None)
                 except ValueError:
-                    return self.send_response(200, json.dumps({"err_msg": "Invalid periods end date"}))
+                    return self.send_response(400, json.dumps({"err_msg": "Invalid periods end date"}))
             
             # A blank query returns the entire list of layers and periods
             if not query_string or not layer_name:
@@ -652,7 +652,7 @@ class OnearthTimeService:
             request_date_string = self.get_query_param("datetime", query_string)
             layer_datetime_info = layer_handler(uuid, layer_name, lookup_keys, None, periods_start, periods_end)
             if isinstance(layer_datetime_info, dict) and layer_datetime_info.get("err_msg"):
-                return self.send_response(200, json.dumps(layer_datetime_info))
+                return self.send_response(400, json.dumps(layer_datetime_info))
             
             # A layer but no date returns the default date and available periods for that layer
             if not request_date_string:
@@ -684,7 +684,7 @@ class OnearthTimeService:
             if not re.match(self.DATE_TEMPLATE, request_date_string) and not re.match(self.DATETIME_TEMPLATE, request_date_string):
                 duration = int(time.time() * 1000 * 1000 - start_timestamp)
                 print(f"step=timesnap_request duration={duration} uuid={uuid}")
-                return self.send_response(200, json.dumps({"err_msg": "Invalid Date"}))
+                return self.send_response(400, json.dumps({"err_msg": "Invalid Date"}))
             
             # Send error message if we can't parse the date for any other reason
             try:
@@ -692,11 +692,11 @@ class OnearthTimeService:
             except ValueError:
                 duration = int(time.time() * 1000 * 1000 - start_timestamp)
                 print(f"step=timesnap_request duration={duration} uuid={uuid}")
-                return self.send_response(200, json.dumps({"err_msg": "Invalid Date"}))
+                return self.send_response(400, json.dumps({"err_msg": "Invalid Date"}))
             
             # Find snap date if date request is valid
             if layer_name not in layer_datetime_info:
-                return self.send_response(200, json.dumps({"err_msg": "Invalid Layer"}))
+                return self.send_response(400, json.dumps({"err_msg": "Invalid Layer"}))
                 
             periods = layer_datetime_info[layer_name]["periods"]
             snap_date, _ = self.time_snap(req_date, periods, True)

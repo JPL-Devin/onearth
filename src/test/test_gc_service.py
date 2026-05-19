@@ -4632,6 +4632,72 @@ class TestDateService(unittest.TestCase):
             len(periods), 25001,
             'Expected 25001 periods with limit=25001, found {}. Url: {}'.format(len(periods), url))
 
+    def test_gc_invalid_request_parameter_returns_400(self):
+        # Test that invalid REQUEST parameter returns HTTP 400
+        apache_config = self.set_up_gc_service('test_gc_invalid_request',
+                                            'EPSG:4326')
+
+        # Create a layer config
+        layer = TEST_LAYERS['test_1']
+        layer_config_path = self.write_config_for_test_layer(layer)
+
+        # Request with invalid REQUEST parameter
+        url = apache_config['endpoint'] + '?request=InvalidRequest'
+        r = requests.get(url)
+
+        if not DEBUG:
+            os.remove(layer_config_path)
+
+        # Check that the response returns 400 Bad Request
+        self.assertEqual(
+            r.status_code, 400,
+            'Expected HTTP 400 for invalid REQUEST parameter, got {}. Url: {}'.format(
+                r.status_code, url))
+
+    def test_gc_missing_request_parameter_returns_400(self):
+        # Test that missing REQUEST parameter returns HTTP 400
+        apache_config = self.set_up_gc_service('test_gc_missing_request',
+                                            'EPSG:4326')
+
+        # Create a layer config
+        layer = TEST_LAYERS['test_1']
+        layer_config_path = self.write_config_for_test_layer(layer)
+
+        # Request without REQUEST parameter
+        url = apache_config['endpoint']
+        r = requests.get(url)
+
+        if not DEBUG:
+            os.remove(layer_config_path)
+
+        # Check that the response returns 400 Bad Request
+        self.assertEqual(
+            r.status_code, 400,
+            'Expected HTTP 400 for missing REQUEST parameter, got {}. Url: {}'.format(
+                r.status_code, url))
+
+    def test_gc_invalid_layer_returns_400(self):
+        # Test that requesting an invalid layer returns HTTP 400
+        apache_config = self.set_up_gc_service('test_gc_invalid_layer_status',
+                                            'EPSG:4326')
+
+        # Create a layer config
+        layer = TEST_LAYERS['test_1']
+        layer_config_path = self.write_config_for_test_layer(layer)
+
+        # Request with invalid layer
+        url = apache_config['endpoint'] + '?request=wmtsgetcapabilities&layer=InvalidLayer'
+        r = requests.get(url)
+
+        if not DEBUG:
+            os.remove(layer_config_path)
+
+        # Check that the response returns 400 Bad Request
+        self.assertEqual(
+            r.status_code, 400,
+            'Expected HTTP 400 for invalid layer, got {}. Url: {}'.format(
+                r.status_code, url))
+
     @classmethod
     def tearDownClass(self):
         if not START_SERVER:

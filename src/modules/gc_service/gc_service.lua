@@ -1314,7 +1314,7 @@ function onearth_gc_service.handler(endpointConfig)
     return function(query_string, _, _)
         local req = get_query_param("request", query_string)
         if not req then
-            return formatXMLResponse(200, 'No REQUEST parameter specified')
+            return formatXMLResponse(400, 'No REQUEST parameter specified')
         end
         req = req:lower()
         local response
@@ -1327,7 +1327,7 @@ function onearth_gc_service.handler(endpointConfig)
         elseif req == "describedomains" then
             response = makeDD(endpointConfig, query_string)
         else
-            response = "Unrecognized REQUEST parameter: '" .. req .. "'. Request must be one of: WMTSGetCapabilities, TWMSGetCapabilities, GetTileService, DescribeDomains"
+            return sendResponse(501, "Unrecognized REQUEST parameter: '" .. req .. "'. Request must be one of: WMTSGetCapabilities, TWMSGetCapabilities, GetTileService, DescribeDomains")
         end
         return sendResponse(200, response)
     end
