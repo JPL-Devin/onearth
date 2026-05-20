@@ -22,10 +22,11 @@ RUN dnf install -y \
 
 # FastCGI
 RUN cd /tmp && \
-    wget https://dl.fedoraproject.org/pub/epel/10/Everything/x86_64/Packages/f/fcgi-2.4.7-1.el10_2.x86_64.rpm && \
-    wget https://dl.fedoraproject.org/pub/epel/10/Everything/x86_64/Packages/f/fcgi-devel-2.4.7-1.el10_2.x86_64.rpm && \
-    dnf install -y ./fcgi-2.4.7-1.el10_2.x86_64.rpm ./fcgi-devel-2.4.7-1.el10_2.x86_64.rpm && \
-	dnf clean all
+    ARCH=$(uname -m) && \
+    wget https://dl.fedoraproject.org/pub/epel/10/Everything/${ARCH}/Packages/f/fcgi-2.4.7-1.el10_2.${ARCH}.rpm && \
+    wget https://dl.fedoraproject.org/pub/epel/10/Everything/${ARCH}/Packages/f/fcgi-devel-2.4.7-1.el10_2.${ARCH}.rpm && \
+    dnf install -y ./fcgi-2.4.7-1.el10_2.${ARCH}.rpm ./fcgi-devel-2.4.7-1.el10_2.${ARCH}.rpm && \
+    dnf clean all
 
 # Some environments don't like git:// links, so we need to workaround that with certain lua dependencies
 WORKDIR /tmp
@@ -61,17 +62,21 @@ WORKDIR /home/oe2/onearth
 # Remove dependency that conflicts with older version in OnEarth requirements.txt
 RUN dnf remove -y python3-dateutil
 
-# Install pip dependencies
-RUN pip install pip==26.0.1
-RUN pip install -r requirements.txt
-
 # Install GDAL
-#RUN pip install --force-reinstall numpy
 ENV LD_LIBRARY_PATH=:/usr/local/lib
 WORKDIR /tmp
-RUN wget -P /tmp/ https://github.com/nasa-gibs/gibs-gdal/releases/download/v${GDAL_VERSION}-${GIBS_GDAL_RELEASE}/gibs-gdal-${GDAL_VERSION}-${GIBS_GDAL_RELEASE}.el${ALMALINUX_VERSION}.x86_64.rpm && \
-    rpm -i gibs-gdal-${GDAL_VERSION}-${GIBS_GDAL_RELEASE}.el${ALMALINUX_VERSION}.x86_64.rpm && \
+RUN ARCH=$(uname -m) && \
+    wget -q -P /tmp/ https://github.com/nasa-gibs/gibs-gdal/releases/download/v${GDAL_VERSION}-${GIBS_GDAL_RELEASE}/gibs-gdal-${GDAL_VERSION}-${GIBS_GDAL_RELEASE}.el10.${ARCH}.rpm && \
+    rpm -i /tmp/gibs-gdal-${GDAL_VERSION}-${GIBS_GDAL_RELEASE}.el10.${ARCH}.rpm && \
     rm -rf /tmp/*
+
+# Install pip dependencies
+WORKDIR /home/oe2/onearth
+# Add setuptools and wheel to fix the pkg_resources error
+RUN pip install pip==26.0.1 setuptools==80.10.2 wheel
+
+# Install dependencies
+RUN pip install -r requirements.txt
 
 # Fix outdated packaging installed in this environment. It does not support the "strip_trailing_zero" argument in
 # canonicalize_version, which was causing GDAL build error
