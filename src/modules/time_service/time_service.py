@@ -440,7 +440,7 @@ class OnearthTimeService:
                         
                         # Handle Case of Data is legitimately missing 
                         if not periods or len(periods) == 0:
-                            return {"err_msg": "Invalid Layer"}
+                            return self.send_response(404, json.dumps({"err_msg": "Invalid layer"}))
                             
                         # Process periods
                         if periods_start or periods_end:
@@ -696,7 +696,7 @@ class OnearthTimeService:
             
             # Find snap date if date request is valid
             if layer_name not in layer_datetime_info:
-                return self.send_response(400, json.dumps({"err_msg": "Invalid Layer"}))
+                return self.send_response(404, json.dumps({"err_msg": "Invalid Layer"}))
                 
             periods = layer_datetime_info[layer_name]["periods"]
             snap_date, _ = self.time_snap(req_date, periods, True)
