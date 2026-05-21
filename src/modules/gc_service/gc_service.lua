@@ -1076,7 +1076,7 @@ local function makeGC(endpointConfig, query_string)
     end
     dom:maptags(removeServiceMetadataURL)
     dom:add_direct_child(serviceMetadataURL)
-    return xml.tostring(dom)
+    return 200, xml.tostring(dom)
 end
 
 
