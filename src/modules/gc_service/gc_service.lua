@@ -1286,9 +1286,9 @@ local function makeDD(endpointConfig, query_string)
         end
         dom:add_direct_child(timeDomainNode)
     elseif errorDom then
-        return tostring(errorDom)
+        return 400, tostring(errorDom)
     end
-    return tostring(dom)
+    return 200, tostring(dom)
 end
 
 local function generateFromEndpointConfig()
@@ -1320,7 +1320,7 @@ function onearth_gc_service.handler(endpointConfig)
         elseif req == "twmsgetcapabilities" then
             status_code, response = makeTWMSGC(endpointConfig)
         elseif req == "gettileservice" then
-            status_code,response = makeGTS(endpointConfig)
+            status_code, response = makeGTS(endpointConfig)
         elseif req == "describedomains" then
             status_code, response = makeDD(endpointConfig, query_string)
         else
