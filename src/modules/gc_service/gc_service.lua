@@ -1249,7 +1249,7 @@ local function makeDD(endpointConfig, query_string)
         end 
         if dateList["err_msg"] then 
             local errorDom = makeExceptionReport("InvalidParameterValue", dateList["err_msg"], "", nil)
-            return dateList["status"], tostring(errorDom)
+            return tonumber(dateList["status"]) or 500, tostring(errorDom)
         end 
         local periodsList = dateList and dateList[layer] and dateList[layer]["periods"] or {}
         local size = dateList and dateList[layer] and dateList[layer]["periods_in_range"] or "0"

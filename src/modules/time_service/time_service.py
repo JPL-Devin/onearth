@@ -440,7 +440,7 @@ class OnearthTimeService:
                         
                         # Handle Case of Data is legitimately missing 
                         if not periods or len(periods) == 0:
-                            return self.send_response(404, json.dumps({"err_msg": "Invalid layer"}))
+                            return {"err_msg": "Invalid layer", "status": 404}
                             
                         # Process periods
                         if periods_start or periods_end:
