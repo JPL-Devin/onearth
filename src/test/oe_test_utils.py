@@ -763,6 +763,10 @@ def get_url(url):
     """
     try:
         response = urllib.request.urlopen(url)
+    except urllib.error.HTTPError as e:
+        # For HTTP errors (400, 404, 500, etc.), return the error response
+        # so tests can parse the error body (e.g., XML exception reports)
+        return e
     except urllib.error.URLError:
         raise urllib.error.URLError('Cannot access URL: ' + url)
     except http.client.RemoteDisconnected:

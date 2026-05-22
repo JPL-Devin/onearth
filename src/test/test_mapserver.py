@@ -514,6 +514,9 @@ class TestMapserver(unittest.TestCase):
             print('URL: ' + req_url)
         response = get_url(req_url)
 
+        # Check that we got HTTP 400 for bad time parameter
+        self.assertEqual(response.code, 400, 'Expected HTTP 400 for bad time parameter, got {}. URL: {}'.format(response.code, req_url))
+
         # Check if the response is valid XML
         try:
             XMLroot = ElementTree.XML(response.read())
@@ -776,7 +779,12 @@ class TestMapserver(unittest.TestCase):
             print('\nTesting: Invalid WMS Format')
             print('URL: ' + req_url)
 
-        response = get_url(req_url).read()
+        response_obj = get_url(req_url)
+        
+        # Check that we got HTTP 400 for invalid format parameter
+        self.assertEqual(response_obj.code, 400, 'Expected HTTP 400 for invalid format parameter, got {}. URL: {}'.format(response_obj.code, req_url))
+        
+        response = response_obj.read()
 
         # Check if the response is valid XML
         try:
@@ -804,7 +812,12 @@ class TestMapserver(unittest.TestCase):
             print('\nTesting: Invalid WMS Format')
             print('URL: ' + req_url)
 
-        response = get_url(req_url).read()
+        response_obj = get_url(req_url)
+        
+        # Check that we got HTTP 400 for invalid format parameter
+        self.assertEqual(response_obj.code, 400, 'Expected HTTP 400 for invalid format parameter, got {}. URL: {}'.format(response_obj.code, req_url))
+        
+        response = response_obj.read()
 
         # Check if the response is valid XML
         try:
