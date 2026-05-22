@@ -3792,6 +3792,10 @@ class TestDateService(unittest.TestCase):
         layer = TEST_LAYERS['test_1']
         layer_config_path = self.write_config_for_test_layer(layer)
 
+        # Add config key to Redis so layer is recognized as valid
+        r = redis.StrictRedis(host='localhost', port=6379, db=0)
+        r.sadd('layer:{0}:config'.format(layer['layer_id']), 'P1D')
+
         redis_info = None
         if layer.get('static') == 'false':
             redis_info = [
@@ -3805,6 +3809,9 @@ class TestDateService(unittest.TestCase):
 
         if not START_SERVER:
             os.remove(layer_config_path)
+            # Clean up Redis config key
+            redis_client = redis.StrictRedis(host='localhost', port=6379, db=0)
+            redis_client.delete('layer:{0}:config'.format(layer['layer_id']))
             if redis_info:
                 remove_redis_layer(redis_info)
 
@@ -4304,7 +4311,7 @@ class TestDateService(unittest.TestCase):
             'Expected HTTP 400 for nonexistent layer, got {}. Url: {}'.format(
                 r.status_code, url))
 
-        exception_elems = response_dom.findall('{*}ExceptionText')
+        exception_elems = response_dom.findall('.//{*}ExceptionText')
         
         expected_message = 'You must request a layer if you specify the layer query parameter'
         found_message = exception_elems[0].text
@@ -4344,11 +4351,11 @@ class TestDateService(unittest.TestCase):
                     url, e))
 
         self.assertEqual(
-            r.status_code, 400,
-            'Expected HTTP 400 for nonexistent layer, got {}. Url: {}'.format(
+            r.status_code, 404,
+            'Expected HTTP 404 for nonexistent layer, got {}. Url: {}'.format(
                 r.status_code, url))
 
-        exception_elems = response_dom.findall('{*}ExceptionText')
+        exception_elems = response_dom.findall('.//{*}ExceptionText')
         
         expected_message = 'Requested layer(s) not found: {}'.format(nonexistent_layer)
         found_message = exception_elems[0].text
@@ -4389,11 +4396,11 @@ class TestDateService(unittest.TestCase):
                     url, e))
 
         self.assertEqual(
-            r.status_code, 400,
-            'Expected HTTP 400 for nonexistent layer, got {}. Url: {}'.format(
+            r.status_code, 404,
+            'Expected HTTP 404 for nonexistent layer, got {}. Url: {}'.format(
                 r.status_code, url))
 
-        exception_elems = response_dom.findall('{*}ExceptionText')
+        exception_elems = response_dom.findall('.//{*}ExceptionText')
         
         expected_message = 'Requested layer(s) not found: {}'.format(nonexistent_layer)
         found_message = exception_elems[0].text
@@ -4433,7 +4440,7 @@ class TestDateService(unittest.TestCase):
             'Expected HTTP 400 for duplicate layers layer, got {}. Url: {}'.format(
                 r.status_code, url))
 
-        exception_elems = response_dom.findall('{*}ExceptionText')
+        exception_elems = response_dom.findall('.//{*}ExceptionText')
         
         expected_message = 'Duplicate layer names'
         found_message = exception_elems[0].text
