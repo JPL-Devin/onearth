@@ -432,6 +432,10 @@ class OnearthTimeService:
                         key_type = client.type(f"{prefix_string}layer:{layer_name}:periods")
                         periods = None
                         
+                        # Check if layer exists at all
+                        if key_type == "none":
+                            return {"err_msg": "Invalid Layer", "status": 404}
+                        
                         if key_type == "zset":
                             periods = client.zrange(f"{prefix_string}layer:{layer_name}:periods", 0, -1)
                         elif key_type == "set":
@@ -440,7 +444,7 @@ class OnearthTimeService:
                         
                         # Handle Case of Data is legitimately missing 
                         if not periods or len(periods) == 0:
-                            return {"err_msg": "Invalid layer", "status": 404}
+                            return {"err_msg": "Invalid layer or missing periods"}
                             
                         # Process periods
                         if periods_start or periods_end:
@@ -652,7 +656,8 @@ class OnearthTimeService:
             request_date_string = self.get_query_param("datetime", query_string)
             layer_datetime_info = layer_handler(uuid, layer_name, lookup_keys, None, periods_start, periods_end)
             if isinstance(layer_datetime_info, dict) and layer_datetime_info.get("err_msg"):
-                return self.send_response(400, json.dumps(layer_datetime_info))
+                status_code = layer_datetime_info.get("status", 400)
+                return self.send_response(status_code, json.dumps(layer_datetime_info))
             
             # A layer but no date returns the default date and available periods for that layer
             if not request_date_string:

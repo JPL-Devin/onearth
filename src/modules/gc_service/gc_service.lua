@@ -228,6 +228,10 @@ local function getDateList(endpointConfig, layer, periods_start, periods_end, li
         local reqDateList = JSON:decode(body)
         if headers:get ":status" ~= "200" then
             print("Error contacting date service: " .. body)
+            if reqDateList["err_msg"] == "Invalid layer or missing periods" then
+                return {}
+            end
+            -- For other errors, pass through the error message and status
             if reqDateList["err_msg"] then
                 return {["err_msg"] = reqDateList["err_msg"], ["status"] = headers:get ":status"}
             end
@@ -235,9 +239,6 @@ local function getDateList(endpointConfig, layer, periods_start, periods_end, li
         end
 
         -- merge with the results of any previous requests
-        if reqDateList["err_msg"] == "Invalid Layer" then
-            return {["err_msg"] = 'Graceal should not be catching this', ["status"] = headers:get ":status"}
-        end
         if not dateList then
             dateList = reqDateList
         else
@@ -1311,7 +1312,7 @@ function onearth_gc_service.handler(endpointConfig)
         local req = get_query_param("request", query_string)
         if not req then
             local errorDom = makeExceptionReport("MissingParameterValue", "No REQUEST parameter specified", "REQUEST", nil)
-            return 400, tostring(errorDom)
+            return sendResponse(400, tostring(errorDom))
         end
         req = req:lower()
         local response, status_code
@@ -1324,7 +1325,7 @@ function onearth_gc_service.handler(endpointConfig)
         elseif req == "describedomains" then
             status_code, response = makeDD(endpointConfig, query_string)
         else
-            return sendResponse(501, "Unrecognized REQUEST parameter: '" .. req .. "'. Request must be one of: WMTSGetCapabilities, TWMSGetCapabilities, GetTileService, DescribeDomains")
+            return sendResponse(400, "Unrecognized REQUEST parameter: '" .. req .. "'. Request must be one of: WMTSGetCapabilities, TWMSGetCapabilities, GetTileService, DescribeDomains")
         end
         return sendResponse(status_code, response)
     end

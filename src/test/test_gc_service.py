@@ -4299,19 +4299,15 @@ class TestDateService(unittest.TestCase):
                 'Response for url: {} is not valid xml. Error: {}'.format(
                     url, e))
 
-        message_elems = response_dom.findall('{*}Message')
-        self.assertNotEqual(
-            len(message_elems), 0,
-            '<Message> not found in error response. Url: {}'.format(url))
         self.assertEqual(
-            len(message_elems), 1,
-            'Incorrect number of <Message> elements found -- should only be 1. Url: {}'
-            .format(url))
+            r.status_code, 400,
+            'Expected HTTP 400 for nonexistent layer, got {}. Url: {}'.format(
+                r.status_code, url))
+
+        exception_elems = response_dom.findall('{*}ExceptionText')
         
-        # TODO once we resolve https://bugs.earthdata.nasa.gov/projects/GITC/issues/GITC-7806 we should 
-        # be checking the error code status not the message 
         expected_message = 'You must request a layer if you specify the layer query parameter'
-        found_message = message_elems[0].text
+        found_message = exception_elems[0].text
         self.assertIn(
             expected_message, found_message,
             'Expected error message containing "{}", found "{}". Url: {}'.format(
@@ -4347,19 +4343,15 @@ class TestDateService(unittest.TestCase):
                 'Response for url: {} is not valid xml. Error: {}'.format(
                     url, e))
 
-        message_elems = response_dom.findall('{*}Message')
-        self.assertNotEqual(
-            len(message_elems), 0,
-            '<Message> not found in error response. Url: {}'.format(url))
         self.assertEqual(
-            len(message_elems), 1,
-            'Incorrect number of <Message> elements found -- should only be 1. Url: {}'
-            .format(url))
+            r.status_code, 400,
+            'Expected HTTP 400 for nonexistent layer, got {}. Url: {}'.format(
+                r.status_code, url))
+
+        exception_elems = response_dom.findall('{*}ExceptionText')
         
-        # TODO once we resolve https://bugs.earthdata.nasa.gov/projects/GITC/issues/GITC-7806 we should 
-        # be checking the error code status not the message 
         expected_message = 'Requested layer(s) not found: {}'.format(nonexistent_layer)
-        found_message = message_elems[0].text
+        found_message = exception_elems[0].text
         self.assertIn(
             expected_message, found_message,
             'Expected error message containing "{}", found "{}". Url: {}'.format(
@@ -4396,19 +4388,15 @@ class TestDateService(unittest.TestCase):
                 'Response for url: {} is not valid xml. Error: {}'.format(
                     url, e))
 
-        message_elems = response_dom.findall('{*}Message')
-        self.assertNotEqual(
-            len(message_elems), 0,
-            '<Message> not found in error response. Url: {}'.format(url))
         self.assertEqual(
-            len(message_elems), 1,
-            'Incorrect number of <Message> elements found -- should only be 1. Url: {}'
-            .format(url))
+            r.status_code, 400,
+            'Expected HTTP 400 for nonexistent layer, got {}. Url: {}'.format(
+                r.status_code, url))
+
+        exception_elems = response_dom.findall('{*}ExceptionText')
         
-        # TODO once we resolve https://bugs.earthdata.nasa.gov/projects/GITC/issues/GITC-7806 we should 
-        # be checking the error code status not the message 
         expected_message = 'Requested layer(s) not found: {}'.format(nonexistent_layer)
-        found_message = message_elems[0].text
+        found_message = exception_elems[0].text
         self.assertIn(
             expected_message, found_message,
             'Expected error message containing "{}", found "{}". Url: {}'.format(
@@ -4440,19 +4428,15 @@ class TestDateService(unittest.TestCase):
                 'Response for url: {} is not valid xml. Error: {}'.format(
                     url, e))
 
-        message_elems = response_dom.findall('{*}Message')
-        self.assertNotEqual(
-            len(message_elems), 0,
-            '<Message> not found in error response. Url: {}'.format(url))
         self.assertEqual(
-            len(message_elems), 1,
-            'Incorrect number of <Message> elements found -- should only be 1. Url: {}'
-            .format(url))
+            r.status_code, 400,
+            'Expected HTTP 400 for duplicate layers layer, got {}. Url: {}'.format(
+                r.status_code, url))
+
+        exception_elems = response_dom.findall('{*}ExceptionText')
         
-        # TODO once we resolve https://bugs.earthdata.nasa.gov/projects/GITC/issues/GITC-7806 we should 
-        # be checking the error code status not the message 
-        expected_message = 'Duplicate layer names {}'.format(layer['layer_id'])
-        found_message = message_elems[0].text
+        expected_message = 'Duplicate layer names'
+        found_message = exception_elems[0].text
         self.assertIn(
             expected_message, found_message,
             'Expected error message containing "{}", found "{}". Url: {}'.format(
@@ -4676,8 +4660,8 @@ class TestDateService(unittest.TestCase):
             'Expected HTTP 400 for missing REQUEST parameter, got {}. Url: {}'.format(
                 r.status_code, url))
 
-    def test_gc_invalid_layer_returns_400(self):
-        # Test that requesting an invalid layer returns HTTP 400
+    def test_gc_invalid_layer_returns_404(self):
+        # Test that requesting an invalid layer returns HTTP 404
         apache_config = self.set_up_gc_service('test_gc_invalid_layer_status',
                                             'EPSG:4326')
 
@@ -4692,10 +4676,10 @@ class TestDateService(unittest.TestCase):
         if not DEBUG:
             os.remove(layer_config_path)
 
-        # Check that the response returns 400 Bad Request
+        # Check that the response returns 404 Bad Request
         self.assertEqual(
-            r.status_code, 400,
-            'Expected HTTP 400 for invalid layer, got {}. Url: {}'.format(
+            r.status_code, 404,
+            'Expected HTTP 404 for invalid layer, got {}. Url: {}'.format(
                 r.status_code, url))
 
     @classmethod
