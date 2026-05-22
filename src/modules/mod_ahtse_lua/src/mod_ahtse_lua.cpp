@@ -219,10 +219,14 @@ static int handler(request_rec *r)
       if (HTTP_OK == status) {
         // 200 means all OK
         status = OK;
+      } else if (status >= 300 && status < 400) {
+        // For redirects (3xx), return the status code directly so Apache handles the redirect
+        // Apache will process the Location header and perform the redirect
+        // No change needed - just pass through the status
       } else {
-        // For non-200 status codes (errors, redirects, etc.):
+        // For error status codes (4xx, 5xx):
         // Set the response status explicitly, then return OK to tell Apache
-        // we handled this request successfully with a custom status
+        // we handled this request successfully with a custom error status
         r->status = status;
         status = OK;
       }
