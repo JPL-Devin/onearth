@@ -432,10 +432,6 @@ class OnearthTimeService:
                         key_type = client.type(f"{prefix_string}layer:{layer_name}:periods")
                         periods = None
                         
-                        # Check if layer exists at all
-                        if key_type == "none":
-                            return {"err_msg": "Invalid Layer", "status": 404}
-                        
                         if key_type == "zset":
                             periods = client.zrange(f"{prefix_string}layer:{layer_name}:periods", 0, -1)
                         elif key_type == "set":
@@ -444,6 +440,10 @@ class OnearthTimeService:
                         
                         # Handle Case of Data is legitimately missing 
                         if not periods or len(periods) == 0:
+                            config_key_type = client.type(f"{prefix_string}layer:{layer_name}:config")
+                            # Check if layer exists by looking for config key
+                            if config_key_type == "none":
+                                return {"err_msg": "Invalid Layer", "status": 404}
                             return {"err_msg": "Invalid layer or missing periods"}
                             
                         # Process periods
