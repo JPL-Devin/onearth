@@ -1122,7 +1122,7 @@ class TestDateService(unittest.TestCase):
                 'Error with requesting periods where there is no data within a range: got {0}, expected {1}.'.format(returned_periods, expected_periods))
 
     def test_periods_no_data(self):
-        expected_message = {'err_msg': 'Invalid Layer'}
+        expected_message = {'err_msg': 'Invalid Layer', 'status': 404}
         response_body, headers, status_code = self.handler('layer=nonexistent_layer', {}, {})
         res = json.loads(response_body)
         self.assertEqual(
@@ -1545,12 +1545,18 @@ class TestDateService(unittest.TestCase):
                       'Invalid Date']
 
         seed_redis_data(test_layer)
+        
+        # Add config key to Redis so layer is recognized as valid
+        r = redis.StrictRedis(host='localhost', port=6379, db=0)
+        r.sadd('layer:{0}:config'.format(test_layer[0]), 'P1D')
 
         query_string = 'layer={0}&datetime={1}'.format(test_layer[0], test_layer[3])
         response_body, headers, status_code = self.handler(query_string, {}, {})
         res = json.loads(response_body)
 
         if not DEBUG:
+            # Clean up Redis config key
+            r.delete('layer:{0}:config'.format(test_layer[0]))
             remove_redis_layer(test_layer)
 
         # Check that the response returns 400 Bad Request
@@ -1563,16 +1569,16 @@ class TestDateService(unittest.TestCase):
             'err_msg', res,
             'Expected error message in response for invalid date')
 
-    def test_time_service_invalid_layer_returns_400(self):
-        # Test that invalid layer returns HTTP 400
+    def test_time_service_invalid_layer_returns_404(self):
+        # Test that invalid layer returns HTTP 404
         query_string = 'layer=NonExistentLayer&datetime=2015-01-01'
         response_body, headers, status_code = self.handler(query_string, {}, {})
         res = json.loads(response_body)
 
-        # Check that the response returns 400 Bad Request
+        # Check that the response returns 404 Not found
         self.assertEqual(
-            status_code, 400,
-            'Expected HTTP 400 for invalid layer, got {}'.format(status_code))
+            status_code, 404,
+            'Expected HTTP 404 for invalid layer, got {}'.format(status_code))
 
         # Verify error message is present
         self.assertIn(
