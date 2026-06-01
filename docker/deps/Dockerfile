@@ -25,13 +25,13 @@ RUN dnf -y update && \
         libjpeg-turbo-devel-3.0.2 \
         libxml2-devel-2.12.5 \
         mod_ssl-1:2.4.63 \
-        openssl-devel-1:3.5.1 \
+        openssl-devel-1:3.5.5 \
         luarocks-3.9.2 \
-        redis-7.2.4 \
+        redis \
         cronie-1.7.0 \
         logrotate-3.22.0 \
-        python3-devel-3.12.12 \
-        cmake-3.30.5 \
+        python3-devel-3.12.13 \
+        cmake-3.31.8 \
         parallel && \
     dnf clean all
 

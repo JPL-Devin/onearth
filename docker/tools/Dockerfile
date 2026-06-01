@@ -35,7 +35,7 @@ RUN dnf -y update && \
         logrotate-3.22.0 \
         fribidi-devel-1.0.14 \
         cairo-devel-1.18.2 \
-        cmake-3.30.5 \
+        cmake-3.31.8 \
         harfbuzz-devel-8.4.0 \
         proj-9.6.0 \
         proj-devel-9.6.0 \
