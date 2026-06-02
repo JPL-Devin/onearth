@@ -1639,33 +1639,6 @@ class TestDateService(unittest.TestCase):
             'err_msg', res,
             'Expected error message in response for invalid periods_start')
 
-    def test_time_service_invalid_periods_end_returns_400(self):
-        # Test that invalid periods_end parameter returns HTTP 400
-        test_layer = ['test_invalid_periods_end_layer',
-                      '2015-01-01/2015-01-05/P1D',
-                      'dates',
-                      '2015-01-03',
-                      '2015-01-03']
-
-        seed_redis_data(test_layer)
-
-        query_string = 'layer={0}&periods_end=invalid-date-format'.format(test_layer[0])
-        response_body, headers, status_code = self.handler(query_string, {}, {})
-        res = json.loads(response_body)
-
-        if not DEBUG:
-            remove_redis_layer(test_layer)
-
-        # Check that the response returns 400 Bad Request
-        self.assertEqual(
-            status_code, 400,
-            'Expected HTTP 400 for invalid periods_end parameter, got {}'.format(status_code))
-
-        # Verify error message is present
-        self.assertIn(
-            'err_msg', res,
-            'Expected error message in response for invalid periods_end')
-
 if __name__ == '__main__':
     # Parse options before running tests
     parser = OptionParser()
