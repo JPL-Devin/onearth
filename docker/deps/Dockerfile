@@ -27,7 +27,7 @@ RUN dnf -y update && \
         mod_ssl-1:2.4.63 \
         openssl-devel-1:3.5.5 \
         luarocks-3.9.2 \
-        redis \
+        valkey-compat-redis-8.0.7 \
         cronie-1.7.0 \
         logrotate-3.22.0 \
         python3-devel-3.12.13 \
