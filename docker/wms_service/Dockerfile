@@ -13,7 +13,7 @@ RUN dnf install -y \
         proj-devel-9.6.0 \
         fribidi-devel-1.0.14 \
         cairo-devel-1.18.2 \
-        cmake-3.31.8 \
+        cmake-3.30.5 \
         geos-3.13.1 \
         geos-devel-3.13.1 \
         harfbuzz-devel-8.4.0 \
