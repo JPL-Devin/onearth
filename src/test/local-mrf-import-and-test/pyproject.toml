@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "onearth-import"
+version = "0.1.0"
+description = "CLI for importing MRF layers into a local OnEarth docker-compose stack"
+requires-python = ">=3.9"
+dependencies = [
+    "PyYAML>=6.0",
+    "Pillow>=10.0",
+]
+
+[project.scripts]
+onearth-import = "onearth_import.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["onearth_import*"]
