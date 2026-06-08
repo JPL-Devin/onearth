@@ -199,6 +199,7 @@ outfilename = Path(endpoint_config['mapserver']['mapfile_location'])
 header = Path(endpoint_config['mapserver']['mapfile_header'])
 redirect_endpoint = Path(strip_trailing_slash(endpoint_config['mapserver']['redirect_endpoint']))
 epsg_code = endpoint_config['epsg_code']
+default_datetime = None
 
 # Get layer configs
 layer_configs = get_layer_configs(endpoint_config)
