@@ -24,7 +24,7 @@ RUN dnf -y update && \
         libcurl-devel-8.12.1 \
         libjpeg-turbo-devel-3.0.2 \
         libxml2-devel-2.12.5 \
-        mod_ssl-1:2.4.63 \
+        mod_ssl-1:2.4.63-13.el10_2.1 \
         openssl-devel-1:3.5.5 \
         luarocks-3.9.2 \
         valkey-compat-redis-8.0.7 \
