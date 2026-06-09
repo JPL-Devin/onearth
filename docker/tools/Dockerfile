@@ -30,12 +30,12 @@ RUN dnf -y update && \
         libjpeg-turbo-devel-3.0.2 \
         libxml2-devel-2.12.5 \
         luarocks-3.9.2 \
-        redis-7.2.4 \
+        valkey-compat-redis-8.0.7 \
         cronie-1.7.0 \
         logrotate-3.22.0 \
         fribidi-devel-1.0.14 \
         cairo-devel-1.18.2 \
-        cmake-3.30.5 \
+        cmake-3.31.8 \
         harfbuzz-devel-8.4.0 \
         proj-9.6.0 \
         proj-devel-9.6.0 \
