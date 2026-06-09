@@ -25,13 +25,13 @@ RUN dnf -y update && \
         libjpeg-turbo-devel-3.0.2 \
         libxml2-devel-2.12.5 \
         mod_ssl-1:2.4.63 \
-        openssl-devel-1:3.5.1 \
+        openssl-devel-1:3.5.5 \
         luarocks-3.9.2 \
-        redis-7.2.4 \
+        valkey-compat-redis-8.0.7 \
         cronie-1.7.0 \
         logrotate-3.22.0 \
-        python3-devel-3.12.12 \
-        cmake-3.30.5 \
+        python3-devel-3.12.13 \
+        cmake-3.31.8 \
         parallel && \
     dnf clean all
 
@@ -83,9 +83,9 @@ RUN git clone --depth=1 https://github.com/google/brunsli.git && \
 WORKDIR /tmp
 RUN dnf install -y yum-utils-4.7.0 rpm-build-4.19.1.1 && \
     dnf clean all && \
-    yumdownloader --source httpd-2.4.63-4.el10_1.3.x86_64 && \
+    yumdownloader --source httpd-2.4.63-13.el10_2.1.x86_64 && \
     HOME="/tmp" rpm -ivh httpd-*.src.rpm && \
-    yum-builddep -y httpd-2.4.63-4.el10_1.3.x86_64
+    yum-builddep -y httpd-2.4.63-13.el10_2.1.x86_64
 
 # Copy OnEarth to home directory
 RUN mkdir -p /home/oe2
