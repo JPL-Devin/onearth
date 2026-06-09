@@ -82,13 +82,13 @@ RUN git clone --depth=1 https://github.com/google/brunsli.git && \
 # Download RPM source for Apache
 WORKDIR /tmp
 RUN dnf install -y yum-utils-4.7.0 rpm-build-4.19.1.1 && \
-    dnf install -y \
-        httpd-core-2.4.63-13.el10_2.1 \
-        httpd-devel-2.4.63-13.el10_2.1 \
-        httpd-filesystem-2.4.63-13.el10_2.1 \
-        httpd-manual-2.4.63-13.el10_2.1 \
-        httpd-tools-2.4.63-13.el10_2.1 \
-        mod_lua-2.4.63-13.el10_2.1 && \
+    # dnf install -y \
+    #     httpd-core-2.4.63-13.el10_2.1 \
+    #     httpd-devel-2.4.63-13.el10_2.1 \
+    #     httpd-filesystem-2.4.63-13.el10_2.1 \
+    #     httpd-manual-2.4.63-13.el10_2.1 \
+    #     httpd-tools-2.4.63-13.el10_2.1 \
+    #     mod_lua-2.4.63-13.el10_2.1 && \
     dnf clean all && \
     yumdownloader --source httpd-2.4.63-13.el10_2.1.x86_64 && \
     HOME="/tmp" rpm -ivh httpd-*.src.rpm && \
@@ -120,26 +120,26 @@ RUN wget http://archive.apache.org/dist/apr/apr-util-1.6.3.tar.gz && \
     make && make install
 
 # Configure the mod_proxy patch, rebuild the RPM and install it
-WORKDIR /tmp/rpmbuild/SPECS
-RUN sed -i 's:--with-apr=%{_prefix}:--with-apr=/usr/local/apr/bin/apr-1-config:g' httpd.spec && \
-    sed -i 's:--with-apr-util=%{_prefix}:--with-apr-util=/usr/local/apr/bin/apu-1-config:g' httpd.spec && \
-    sed -i '/xmlto man/d' httpd.spec && \
-    HOME="/tmp" rpmbuild -bp httpd.spec && \
-    ls /home/oe2/onearth && \
-    cp /home/oe2/onearth/docker/mod_proxy_http.patch /tmp/rpmbuild/SOURCES && \
-    cp /home/oe2/onearth/docker/proxypass_nomain_flag.patch /tmp/rpmbuild/SOURCES && \
-    patch -p2 < /home/oe2/onearth/docker/http_rpm_spec.patch && \
-    HOME="/tmp" QA_RPATHS=$(( 0x0002 )) rpmbuild -ba httpd.spec && \
-    yum -y remove httpd httpd-devel httpd-tools && \
-    yum -y install system-logos-httpd /etc/mime.types sscg && \
-    yum clean all && \
-    rpm -ivh /tmp/rpmbuild/RPMS/*/httpd*.rpm && \
-    rpm -ivh /tmp/rpmbuild/RPMS/x86_64/mod_ssl*.rpm && \
-    rpm -ivh /tmp/rpmbuild/RPMS/x86_64/mod_lua*.rpm && \
-    sed -i 's/\\"%{User-Agent}i\\"" combined/\\"%{User-Agent}i\\" \\"%{X-Forwarded-For}i\\"" combined/' /etc/httpd/conf/httpd.conf && \
-    sed -i 's/\\"%{User-Agent}i\\" %I %O" combinedio/\\"%{User-Agent}i\\" \\"%{X-Forwarded-For}i\\" %I %O" combinedio/' /etc/httpd/conf/httpd.conf && \
-    grep -q 'X-Forwarded-For' /etc/httpd/conf/httpd.conf || { echo "ERROR: LogFormat modification failed"; exit 1; } && \
-    cd / && rm -rf /tmp/apr-1.7.4* /tmp/apr-util-1.6.3* /tmp/httpd-2.4.63* /tmp/rpmbuild*
+# WORKDIR /tmp/rpmbuild/SPECS
+# RUN sed -i 's:--with-apr=%{_prefix}:--with-apr=/usr/local/apr/bin/apr-1-config:g' httpd.spec && \
+#     sed -i 's:--with-apr-util=%{_prefix}:--with-apr-util=/usr/local/apr/bin/apu-1-config:g' httpd.spec && \
+#     sed -i '/xmlto man/d' httpd.spec && \
+#     HOME="/tmp" rpmbuild -bp httpd.spec && \
+#     ls /home/oe2/onearth && \
+#     cp /home/oe2/onearth/docker/mod_proxy_http.patch /tmp/rpmbuild/SOURCES && \
+#     cp /home/oe2/onearth/docker/proxypass_nomain_flag.patch /tmp/rpmbuild/SOURCES && \
+#     patch -p2 < /home/oe2/onearth/docker/http_rpm_spec.patch && \
+#     HOME="/tmp" QA_RPATHS=$(( 0x0002 )) rpmbuild -ba httpd.spec && \
+#     yum -y remove httpd httpd-devel httpd-tools && \
+#     yum -y install system-logos-httpd /etc/mime.types sscg && \
+#     yum clean all && \
+#     rpm -ivh /tmp/rpmbuild/RPMS/*/httpd*.rpm && \
+#     rpm -ivh /tmp/rpmbuild/RPMS/x86_64/mod_ssl*.rpm && \
+#     rpm -ivh /tmp/rpmbuild/RPMS/x86_64/mod_lua*.rpm && \
+#     sed -i 's/\\"%{User-Agent}i\\"" combined/\\"%{User-Agent}i\\" \\"%{X-Forwarded-For}i\\"" combined/' /etc/httpd/conf/httpd.conf && \
+#     sed -i 's/\\"%{User-Agent}i\\" %I %O" combinedio/\\"%{User-Agent}i\\" \\"%{X-Forwarded-For}i\\" %I %O" combinedio/' /etc/httpd/conf/httpd.conf && \
+#     grep -q 'X-Forwarded-For' /etc/httpd/conf/httpd.conf || { echo "ERROR: LogFormat modification failed"; exit 1; } && \
+#     cd / && rm -rf /tmp/apr-1.7.4* /tmp/apr-util-1.6.3* /tmp/httpd-2.4.63* /tmp/rpmbuild*
 
 # Install mod_receive
 WORKDIR /home/oe2/onearth/src/modules/mod_receive/src/
