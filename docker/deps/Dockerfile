@@ -85,7 +85,7 @@ RUN dnf install -y yum-utils-4.7.0 rpm-build-4.19.1.1 && \
     dnf clean all && \
     yumdownloader --source httpd-2.4.63-13.el10_2.1.x86_64 && \
     HOME="/tmp" rpm -ivh httpd-*.src.rpm && \
-    # SECURITY FIX: Override Release field in httpd.spec to force build dependencies
+    # SECURITY FIX (REVERT LATER): Override Release field in httpd.spec to force build dependencies
     # to use patched version 13.el10_2.1 instead of vulnerable 13.el10.1
     # Addresses vulnerable packages: httpd, httpd-core, httpd-devel, httpd-filesystem,
     # httpd-manual, httpd-tools, mod_lua, mod_ssl (all 13.el10.1 -> 13.el10_2.1)
