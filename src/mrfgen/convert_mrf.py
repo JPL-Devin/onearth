@@ -1,9 +1,22 @@
 #!/usr/bin/env python3
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """
 MRF Conversion Tool
 
 This script converts MRFs between different compression formats:
-  - PNG → JPEG (standard or brunsli-compressed)
+  - PNG → JPEG (standard, ZenJPEG, or brunsli-compressed)
   - JPEG → Brunsli (lossless compression, ~22% size reduction)
   - Brunsli → JPEG (lossless decompression, restores exact original)
 
@@ -31,6 +44,12 @@ Examples:
     
     # Custom quality
     python3 convert_mrf.py input.mrf output_dir/ --quality 90
+    
+    # Custom output filename
+    python3 convert_mrf.py input.mrf output_dir/ --output-name custom_name.mrf
+    
+    # With sigevent monitoring (for production pipelines)
+    python3 convert_mrf.py input.mrf output_dir/ --sigevent-url http://monitor/sigevent
 """
 
 import argparse
@@ -43,42 +62,45 @@ import struct
 import json
 import re
 from pathlib import Path
+from oe_utils import run_command as oe_run_command
 
 DEFAULT_JPEG_QUALITY = 80
 DEFAULT_BLOCK_SIZE = 512
 
+# Global sigevent URL for monitoring (set via command line or None for standalone use)
+SIGEVENT_URL = None
 
-def run_command(command, quiet=False, fail_on_error=True):
-    """Run a shell command and return output."""
-    if not quiet:
-        print(f"Executing: {' '.join(command)}")
-    
-    result = subprocess.run(command, capture_output=True, text=True, check=fail_on_error)
-    
-    if result.returncode != 0:
-        if fail_on_error:
-            raise subprocess.CalledProcessError(result.returncode, command, result.stdout, result.stderr)
+
+def run_command(command, quiet=False):
+    """
+    Wrapper around oe_utils.run_command with optional quiet mode.
+    For tile-by-tile processing, quiet=True suppresses verbose output.
+    """
+    if quiet:
+        # For quiet mode, run command directly without oe_utils logging
+        result = subprocess.run(command, capture_output=True, text=True, check=True)
+        return result.stdout
+    else:
+        # Use standard oe_utils logging for main operations
+        oe_run_command(command, SIGEVENT_URL)
         return None
-    
-    return result.stdout
-
-
-def format_gdal_path(path):
-    """Format path for GDAL (handle spaces and special characters)."""
-    return path
 
 
 def get_mrf_info(mrf_path):
     """Get MRF metadata using gdalinfo."""
-    gdal_mrf_path = format_gdal_path(mrf_path)
-    gdalinfo_command = ['gdalinfo', '--config', 'GDAL_TMPDIR', '/tmp', '-json', gdal_mrf_path]
+    gdalinfo_command = ['gdalinfo', '--config', 'GDAL_TMPDIR', '/tmp', '-json', mrf_path]
     
     json_output = run_command(gdalinfo_command)
     return json.loads(json_output)
 
 
 def detect_compression(mrf_path):
-    """Detect the compression type of an MRF."""
+    """
+    Detect the compression type of an MRF by checking file signatures.
+    
+    JPEG files always start with FF D8 FF (JPEG SOI marker, ITU T.81 standard).
+    Brunsli files use a different format and don't start with FF D8 FF.
+    """
     mrf_path_obj = Path(mrf_path)
     
     # Check data file extension
@@ -86,31 +108,31 @@ def detect_compression(mrf_path):
     ppg_file = mrf_path_obj.with_suffix('.ppg')
     
     if pjg_file.exists():
-        # Check if it's brunsli by looking at MRF metadata
+        # Read first few bytes to detect format by file signature
         try:
-            with open(mrf_path, 'r') as f:
-                mrf_content = f.read()
-                # Brunsli MRFs don't have JFIF:on in options
-                if '<Options>JFIF:on</Options>' in mrf_content:
-                    return 'JPEG'
-                elif '<Compression>JPEG</Compression>' in mrf_content:
-                    return 'JPEG_BRUNSLI'
+            with open(pjg_file, 'rb') as f:
+                header = f.read(3)
+                
+            # Check for JPEG signature (FF D8 FF - JPEG SOI marker)
+            if header == b'\xff\xd8\xff':
+                return 'JPEG'
+            # If it's a .pjg file but not JPEG, it must be Brunsli
+            else:
+                return 'JPEG_BRUNSLI'
         except Exception as e:
-            raise ValueError(f"Failed to read MRF metadata: {e}")
-        return 'JPEG'
+            raise ValueError(f"Failed to read data file: {e}")
     elif ppg_file.exists():
         return 'PNG'
     
     raise ValueError(f"Unknown MRF format: no .pjg or .ppg file found")
 
 
-def convert_png_to_jpeg_standard(input_mrf, output_dir, quality=DEFAULT_JPEG_QUALITY):
+def convert_png_to_jpeg_standard(input_mrf, output_dir, quality=DEFAULT_JPEG_QUALITY, output_name=None):
     """
-    Convert PNG MRF to standard JPEG using GDAL tools (fast bulk conversion).
-    This is the fastest method but only works for PNG → standard JPEG.
-    Uses the same approach as convert_png_to_zenjpeg_mrf.py.
+    Convert PNG MRF to standard JPEG/ZenJPEG using GDAL tools (fast bulk conversion).
+    This is the fastest method but only works for PNG → standard JPEG/ZenJPEG.
     """
-    print("Converting PNG MRF to standard JPEG MRF (Fast Method)")
+    print("Converting PNG MRF to standard JPEG/ZenJPEG MRF (Fast Method)")
     print(f"Input:  {input_mrf}")
     print(f"Output: {output_dir}")
     print("-" * 60)
@@ -126,7 +148,7 @@ def convert_png_to_jpeg_standard(input_mrf, output_dir, quality=DEFAULT_JPEG_QUA
     size_y = info['size'][1]
     bands = info.get('bands', [])
     
-    # Read blocksize from source MRF (quality comes from parameter for PNG input)
+    # Read blocksize from source MRF
     input_mrf_path = Path(input_mrf)
     with open(input_mrf_path, 'r') as f:
         mrf_content = f.read()
@@ -147,7 +169,9 @@ def convert_png_to_jpeg_standard(input_mrf, output_dir, quality=DEFAULT_JPEG_QUA
     if source_overviews:
         print(f"  Source overviews: {source_overviews}")
     
-    output_basename = input_mrf_path.name
+    output_basename = output_name if output_name else input_mrf_path.name
+    if not output_basename.endswith('.mrf'):
+        output_basename += '.mrf'
     output_mrf = os.path.join(output_dir, output_basename)
     
     # Create VRT from input MRF
@@ -169,8 +193,18 @@ def convert_png_to_jpeg_standard(input_mrf, output_dir, quality=DEFAULT_JPEG_QUA
         '-co', 'OPTIONS=JFIF:on'
     ]
     
-    for i in range(1, min(4, len(bands) + 1)):
-        gdal_cmd.extend(['-b', str(i)])
+    # Check if source is paletted (1 band with colorInterpretation = Palette)
+    is_paletted = (len(bands) == 1 and 
+                   bands[0].get('colorInterpretation') == 'Palette')
+    
+    if is_paletted:
+        # For paletted images, use -expand rgb to convert to 3-band RGB
+        gdal_cmd.extend(['-expand', 'rgb'])
+        print(f"  Expanding paletted image to RGB")
+    else:
+        # For non-paletted, select bands (up to 3 for RGB JPEG)
+        for i in range(1, min(4, len(bands) + 1)):
+            gdal_cmd.extend(['-b', str(i)])
     
     gdal_cmd.extend([vrt_path, output_mrf])
     run_command(gdal_cmd)
@@ -206,7 +240,7 @@ def convert_png_to_jpeg_standard(input_mrf, output_dir, quality=DEFAULT_JPEG_QUA
     return True
 
 
-def convert_tile_by_tile(input_mrf_path, output_dir, temp_dir_base, no_cleanup, input_compression, output_compression, quality=DEFAULT_JPEG_QUALITY):
+def convert_tile_by_tile(input_mrf_path, output_dir, temp_dir_base, no_cleanup, input_compression, output_compression, quality=DEFAULT_JPEG_QUALITY, output_name=None):
     """
     Convert MRF by processing tiles individually.
     Required for: PNG→Brunsli, JPEG→Brunsli, or Brunsli→JPEG conversions.
@@ -224,7 +258,6 @@ def convert_tile_by_tile(input_mrf_path, output_dir, temp_dir_base, no_cleanup, 
         # Get input MRF info
         print("\n1/6: Extracting metadata from input MRF...")
         
-        gdal_input_mrf = format_gdal_path(input_mrf_path)
         gdal_config = ['--config', 'GDAL_TMPDIR', '/tmp']
         
         info = get_mrf_info(input_mrf_path)
@@ -234,17 +267,17 @@ def convert_tile_by_tile(input_mrf_path, output_dir, temp_dir_base, no_cleanup, 
         # Get overview info from bands
         overview_factors = []
         bands = info.get('bands', [])
+        num_bands = len(bands)
         if bands and 'overviews' in bands[0]:
             for overview in bands[0]['overviews']:
                 factor = round(size_x / overview['size'][0])
                 if factor > 1:
                     overview_factors.append(factor)
         
-        overview_count = len(overview_factors)
         if overview_factors:
-            print(f"Detected: {size_x}x{size_y}, overviews: {overview_factors}")
+            print(f"Detected: {size_x}x{size_y}, {num_bands} band(s), overviews: {overview_factors}")
         else:
-            print(f"Detected: {size_x}x{size_y}, no overviews")
+            print(f"Detected: {size_x}x{size_y}, {num_bands} band(s), no overviews")
         
         # Read source MRF metadata
         with open(input_mrf_path, 'r') as f:
@@ -263,7 +296,9 @@ def convert_tile_by_tile(input_mrf_path, output_dir, temp_dir_base, no_cleanup, 
         source_idx_path = input_mrf_path_obj.with_suffix('.idx')
         
         os.makedirs(output_dir, exist_ok=True)
-        output_basename = os.path.basename(input_mrf_path)
+        output_basename = output_name if output_name else os.path.basename(input_mrf_path)
+        if not output_basename.endswith('.mrf'):
+            output_basename += '.mrf'
         final_mrf_path = os.path.join(output_dir, output_basename)
         final_data_path = final_mrf_path.replace('.mrf', '.pjg')
         final_idx_path = final_mrf_path.replace('.mrf', '.idx')
@@ -280,8 +315,6 @@ def convert_tile_by_tile(input_mrf_path, output_dir, temp_dir_base, no_cleanup, 
         # Create/modify output MRF metadata
         print("\n2/6: Creating MRF metadata...")
         
-        # Always create clean, consistent MRF metadata
-        # This ensures all conversion paths produce identical .mrf files
         mrf_output_content = f"""<MRF_META>
   <Raster>
     <Size x="{size_x}" y="{size_y}" c="3" />
@@ -422,7 +455,7 @@ def convert_tile_by_tile(input_mrf_path, output_dir, temp_dir_base, no_cleanup, 
                     ] + gdal_config + [
                         '-of', 'PNG',
                         '-srcwin', str(x_off), str(y_off), str(x_size), str(y_size),
-                        gdal_input_mrf,
+                        input_mrf_path,
                         tile_png
                     ]
                     run_command(extract_cmd, quiet=True)
@@ -431,15 +464,28 @@ def convert_tile_by_tile(input_mrf_path, output_dir, temp_dir_base, no_cleanup, 
                     tile_mrf = os.path.join(temp_dir, f"tile.mrf")
                     convert_cmd = [
                         'gdal_translate', '-q'
-                    ] + gdal_config + [
-                        '-b', '1', '-b', '2', '-b', '3',
+                    ] + gdal_config
+                    
+                    # Check if source is paletted
+                    is_paletted = (num_bands == 1 and 
+                                   bands[0].get('colorInterpretation') == 'Palette')
+                    
+                    if is_paletted:
+                        # For paletted images, use -expand rgb to convert to 3-band RGB
+                        convert_cmd.extend(['-expand', 'rgb'])
+                    else:
+                        # For non-paletted, add band selection (up to 3 bands for RGB JPEG)
+                        for i in range(1, min(4, num_bands + 1)):
+                            convert_cmd.extend(['-b', str(i)])
+                    
+                    convert_cmd.extend([
                         '-of', 'MRF',
                         '-co', 'COMPRESS=JPEG',
                         '-co', f'BLOCKSIZE={x_size}',
                         '-co', f'QUALITY={quality}',
                         tile_png,
                         tile_mrf
-                    ]
+                    ])
                     run_command(convert_cmd, quiet=True)
                     
                     # Read JPEG data
@@ -506,7 +552,7 @@ def convert_tile_by_tile(input_mrf_path, output_dir, temp_dir_base, no_cleanup, 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Unified MRF conversion tool",
+        description="MRF conversion tool",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -533,15 +579,22 @@ Note: JPEG ↔ Brunsli conversions use cbrunsli/dbrunsli for truly lossless conv
     parser.add_argument("output_dir", help="Output directory for converted MRF")
     parser.add_argument("--quality", type=int, default=DEFAULT_JPEG_QUALITY,
                        help=f"JPEG quality for PNG→JPEG conversion (default: {DEFAULT_JPEG_QUALITY}, ignored for JPEG input)")
-    # Blocksize is automatically read from input MRF
     parser.add_argument("--brunsli", action="store_true",
                        help="Output brunsli-compressed JPEG (omit for standard JPEG)")
     parser.add_argument("--temp-dir", default=os.environ.get('TMPDIR', '/tmp'),
                        help="Temporary directory for intermediate files")
     parser.add_argument("--no-cleanup", action="store_true",
                        help="Don't delete temporary files after conversion")
+    parser.add_argument("--sigevent-url", dest="sigevent_url",
+                       help="URL for sigevent monitoring (optional)")
+    parser.add_argument("--output-name", dest="output_name",
+                       help="Custom output MRF filename (optional, defaults to input filename)")
     
     args = parser.parse_args()
+    
+    # Set global sigevent URL if provided
+    global SIGEVENT_URL
+    SIGEVENT_URL = args.sigevent_url
     
     # Validate input
     if not os.path.exists(args.input_mrf):
@@ -584,7 +637,8 @@ Note: JPEG ↔ Brunsli conversions use cbrunsli/dbrunsli for truly lossless conv
             success = convert_png_to_jpeg_standard(
                 args.input_mrf,
                 args.output_dir,
-                args.quality
+                args.quality,
+                args.output_name
             )
         else:
             # Use tile-by-tile method for brunsli conversions and JPEG input
@@ -595,7 +649,8 @@ Note: JPEG ↔ Brunsli conversions use cbrunsli/dbrunsli for truly lossless conv
                 args.no_cleanup,
                 input_compression,
                 output_compression,
-                args.quality
+                args.quality,
+                args.output_name
             )
         
         sys.exit(0 if success else 1)
