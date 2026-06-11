@@ -189,13 +189,20 @@ def convert_standard_method(input_mrf, output_dir, quality, blocksize):
     return True
 
 
-def create_empty_mrf_xml(mrf_path, size_x, size_y, block_size, quality):
-    """Create MRF XML metadata file."""
+def create_empty_mrf_xml(mrf_path, size_x, size_y, block_size, quality, use_brunsli=False):
+    """Create MRF XML metadata file.
+    
+    Args:
+        use_brunsli: If True, omit JFIF:on option to enable brunsli compression
+    """
     data_file = os.path.basename(mrf_path).replace('.mrf', '.pjg')
     idx_file = os.path.basename(mrf_path).replace('.mrf', '.idx')
     
     tiles_x = (size_x + block_size - 1) // block_size
     tiles_y = (size_y + block_size - 1) // block_size
+    
+    # Build options line - omit for brunsli, include JFIF:on for standard
+    options_line = "" if use_brunsli else "    <Options>JFIF:on</Options>\n"
     
     xml_content = f"""<MRF_META>
   <Raster>
@@ -203,8 +210,7 @@ def create_empty_mrf_xml(mrf_path, size_x, size_y, block_size, quality):
     <PageSize x="{block_size}" y="{block_size}" c="3" />
     <Compression>JPEG</Compression>
     <Quality>{quality}</Quality>
-    <Options>JFIF:on</Options>
-  </Raster>
+{options_line}  </Raster>
   <Rsets model="uniform" scale="2" />
   <GeoTags>
     <BoundingBox minx="-180.0" miny="-90.0" maxx="180.0" maxy="90.0" />
@@ -281,7 +287,7 @@ def convert_brunsli_method(input_mrf_path, output_dir, quality, blocksize, temp_
         print(f"Using temp directory: {temp_dir}")
         
         print("\n2/6: Creating MRF metadata...")
-        tiles_x, tiles_y = create_empty_mrf_xml(final_mrf_path, size_x, size_y, blocksize, quality)
+        tiles_x, tiles_y = create_empty_mrf_xml(final_mrf_path, size_x, size_y, blocksize, quality, use_brunsli=True)
         total_tiles = tiles_x * tiles_y
         
         print(f"\n3/6: Converting {total_tiles} tiles ({tiles_x}x{tiles_y})...")
