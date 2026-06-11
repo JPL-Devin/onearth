@@ -104,7 +104,7 @@ def detect_compression(mrf_path):
     raise ValueError(f"Unknown MRF format: no .pjg or .ppg file found")
 
 
-def convert_png_to_jpeg_standard(input_mrf, output_dir, quality, blocksize):
+def convert_png_to_jpeg_standard(input_mrf, output_dir, quality=DEFAULT_JPEG_QUALITY):
     """
     Convert PNG MRF to standard JPEG using GDAL tools (fast bulk conversion).
     This is the fastest method but only works for PNG → standard JPEG.
@@ -125,6 +125,13 @@ def convert_png_to_jpeg_standard(input_mrf, output_dir, quality, blocksize):
     size_x = info['size'][0]
     size_y = info['size'][1]
     bands = info.get('bands', [])
+    
+    # Read blocksize from source MRF (quality comes from parameter for PNG input)
+    input_mrf_path = Path(input_mrf)
+    with open(input_mrf_path, 'r') as f:
+        mrf_content = f.read()
+        blocksize_match = re.search(r'<PageSize x="(\d+)"', mrf_content)
+        blocksize = int(blocksize_match.group(1)) if blocksize_match else DEFAULT_BLOCK_SIZE
     
     # Get overview levels from source
     source_overviews = []
@@ -199,7 +206,7 @@ def convert_png_to_jpeg_standard(input_mrf, output_dir, quality, blocksize):
     return True
 
 
-def convert_tile_by_tile(input_mrf_path, output_dir, quality, blocksize, temp_dir_base, no_cleanup, input_compression, output_compression):
+def convert_tile_by_tile(input_mrf_path, output_dir, temp_dir_base, no_cleanup, input_compression, output_compression, quality=DEFAULT_JPEG_QUALITY):
     """
     Convert MRF by processing tiles individually.
     Required for: PNG→Brunsli, JPEG→Brunsli, or Brunsli→JPEG conversions.
@@ -242,16 +249,13 @@ def convert_tile_by_tile(input_mrf_path, output_dir, quality, blocksize, temp_di
         # Read source MRF metadata
         with open(input_mrf_path, 'r') as f:
             mrf_content = f.read()
-            quality_match = re.search(r'<Quality>(\d+)</Quality>', mrf_content)
-            source_quality = int(quality_match.group(1)) if quality_match else quality
+            # For JPEG input, read quality from source; for PNG input, use provided quality
+            if input_compression != 'PNG':
+                quality_match = re.search(r'<Quality>(\d+)</Quality>', mrf_content)
+                if quality_match:
+                    quality = int(quality_match.group(1))
             blocksize_match = re.search(r'<PageSize x="(\d+)"', mrf_content)
-            source_blocksize = int(blocksize_match.group(1)) if blocksize_match else blocksize
-        
-        # Use source quality/blocksize if not overridden
-        if quality == DEFAULT_JPEG_QUALITY and source_quality != DEFAULT_JPEG_QUALITY:
-            quality = source_quality
-        if blocksize == DEFAULT_BLOCK_SIZE and source_blocksize != DEFAULT_BLOCK_SIZE:
-            blocksize = source_blocksize
+            blocksize = int(blocksize_match.group(1)) if blocksize_match else DEFAULT_BLOCK_SIZE
         
         # Setup paths
         input_mrf_path_obj = Path(input_mrf_path)
@@ -527,10 +531,9 @@ Note: JPEG ↔ Brunsli conversions use cbrunsli/dbrunsli for truly lossless conv
     
     parser.add_argument("input_mrf", help="Path to input MRF file")
     parser.add_argument("output_dir", help="Output directory for converted MRF")
-    parser.add_argument("--quality", type=int, default=DEFAULT_JPEG_QUALITY, 
-                       help=f"JPEG quality (1-100, default: {DEFAULT_JPEG_QUALITY})")
-    parser.add_argument("--blocksize", type=int, default=DEFAULT_BLOCK_SIZE,
-                       help=f"Tile block size (default: {DEFAULT_BLOCK_SIZE})")
+    parser.add_argument("--quality", type=int, default=DEFAULT_JPEG_QUALITY,
+                       help=f"JPEG quality for PNG→JPEG conversion (default: {DEFAULT_JPEG_QUALITY}, ignored for JPEG input)")
+    # Blocksize is automatically read from input MRF
     parser.add_argument("--brunsli", action="store_true",
                        help="Output brunsli-compressed JPEG (omit for standard JPEG)")
     parser.add_argument("--temp-dir", default=os.environ.get('TMPDIR', '/tmp'),
@@ -581,20 +584,18 @@ Note: JPEG ↔ Brunsli conversions use cbrunsli/dbrunsli for truly lossless conv
             success = convert_png_to_jpeg_standard(
                 args.input_mrf,
                 args.output_dir,
-                args.quality,
-                args.blocksize
+                args.quality
             )
         else:
             # Use tile-by-tile method for brunsli conversions and JPEG input
             success = convert_tile_by_tile(
                 args.input_mrf,
                 args.output_dir,
-                args.quality,
-                args.blocksize,
                 args.temp_dir,
                 args.no_cleanup,
                 input_compression,
-                output_compression
+                output_compression,
+                args.quality
             )
         
         sys.exit(0 if success else 1)
