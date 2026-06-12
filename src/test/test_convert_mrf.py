@@ -25,7 +25,7 @@ import hashlib
 from optparse import OptionParser
 from oe_test_utils import run_command
 
-SCRIPT_PATH = os.path.join(os.path.dirname(__file__), '../mrfgen/convert_mrf.py')
+SCRIPT_PATH = os.path.join(os.path.dirname(__file__), '/usr/bin/convert_mrf.py')
 
 # Expected checksums for verified correct conversions
 EXPECTED_CHECKSUMS = {
