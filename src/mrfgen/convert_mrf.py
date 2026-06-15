@@ -62,7 +62,6 @@ import struct
 import json
 import re
 from pathlib import Path
-from oe_utils import run_command as oe_run_command
 
 DEFAULT_JPEG_QUALITY = 80
 DEFAULT_BLOCK_SIZE = 512
@@ -73,17 +72,17 @@ SIGEVENT_URL = None
 
 def run_command(command, quiet=False):
     """
-    Wrapper around oe_utils.run_command with optional quiet mode.
-    For tile-by-tile processing, quiet=True suppresses verbose output.
+    Run a shell command and return output.
+    If quiet=False and SIGEVENT_URL is set, logs to sigevent.
     """
-    if quiet:
-        # For quiet mode, run command directly without oe_utils logging
-        result = subprocess.run(command, capture_output=True, text=True, check=True)
-        return result.stdout
-    else:
-        # Use standard oe_utils logging for main operations
-        oe_run_command(command, SIGEVENT_URL)
-        return None
+    result = subprocess.run(command, capture_output=True, text=True, check=True)
+    
+    if not quiet and SIGEVENT_URL:
+        # Log to sigevent if configured and not in quiet mode
+        from oe_utils import log_info_mssg
+        log_info_mssg(' '.join(command))
+    
+    return result.stdout
 
 
 def get_mrf_info(mrf_path):
@@ -571,7 +570,7 @@ Examples:
   # Custom quality
   python3 convert_mrf.py input.mrf output_dir/ --quality 90
 
-Note: JPEG ↔ Brunsli conversions use cbrunsli/dbrunsli for truly lossless conversions.
+Note: JPEG ↔ Brunsli conversions use cbrunsli/dbrunsli for lossless conversions.
         """
     )
     

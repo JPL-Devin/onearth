@@ -32,7 +32,8 @@ EXPECTED_CHECKSUMS = {
     'zen_pjg': '62ebd3d84f2fcbe8c45786ff8fb2a844',
     'zen_idx': 'a0dbd898e56a331e158944bab4c38a07',
     'zenbrunsli_pjg': 'af5416ab0c6c49236966566d6ce18a0a',
-    'zenbrunsli_idx': 'c54fc61f18939317185d3e34bce60034'
+    'png2zenbrunsli_idx': 'b15a6e369ae582316e7f347aab0604d6',  # PNG→Brunsli with regenerated overviews
+    'zen2zenbrunsli_idx': 'c54fc61f18939317185d3e34bce60034'   # JPEG→Brunsli with converted overviews
 }
 
 class TestConvertMRF(unittest.TestCase):
@@ -190,8 +191,8 @@ class TestConvertMRF(unittest.TestCase):
         idx_md5 = self.get_file_md5(files['idx'])
         self.assertEqual(pjg_md5, EXPECTED_CHECKSUMS['zenbrunsli_pjg'],
                         f"Data file checksum mismatch: {pjg_md5} != {EXPECTED_CHECKSUMS['zenbrunsli_pjg']}")
-        self.assertEqual(idx_md5, EXPECTED_CHECKSUMS['zenbrunsli_idx'],
-                        f"Index file checksum mismatch: {idx_md5} != {EXPECTED_CHECKSUMS['zenbrunsli_idx']}")
+        self.assertEqual(idx_md5, EXPECTED_CHECKSUMS['png2zenbrunsli_idx'],
+                        f"Index file checksum mismatch: {idx_md5} != {EXPECTED_CHECKSUMS['png2zenbrunsli_idx']}")
         
         print(f"✓ PNG → Brunsli ZenJPEG conversion successful")
         print(f"  Data size: {data_size:,} bytes")
@@ -233,8 +234,8 @@ class TestConvertMRF(unittest.TestCase):
         idx_md5 = self.get_file_md5(files['idx'])
         self.assertEqual(pjg_md5, EXPECTED_CHECKSUMS['zenbrunsli_pjg'],
                         f"Data file checksum mismatch: {pjg_md5} != {EXPECTED_CHECKSUMS['zenbrunsli_pjg']}")
-        self.assertEqual(idx_md5, EXPECTED_CHECKSUMS['zenbrunsli_idx'],
-                        f"Index file checksum mismatch: {idx_md5} != {EXPECTED_CHECKSUMS['zenbrunsli_idx']}")
+        self.assertEqual(idx_md5, EXPECTED_CHECKSUMS['zen2zenbrunsli_idx'],
+                        f"Index file checksum mismatch: {idx_md5} != {EXPECTED_CHECKSUMS['zen2zenbrunsli_idx']}")
         
         print(f"✓ ZenJPEG → Brunsli ZenJPEG conversion successful")
         print(f"  Data size: {data_size:,} bytes")
@@ -285,32 +286,41 @@ class TestConvertMRF(unittest.TestCase):
         print(f"  Index MD5: {idx_md5}")
 
     def test_05_mrf_metadata_consistency(self):
-        """Test that MRF metadata is consistent across conversion paths."""
+        """Test that MRF metadata matches expected reference files."""
         print("\n=== Test 5: MRF Metadata Consistency ===")
         
-        # Get all standard JPEG MRFs
-        zen_mrf = self.get_mrf_files(self.output_zen)['mrf']
-        zen_roundtrip_mrf = self.get_mrf_files(self.output_zenbrunsli2zen)['mrf']
+        # Define expected MRF files from expected/ subdirectory
+        expected_dir = os.path.join(self.testdata_path, 'expected')
+        expected_zen = os.path.join(expected_dir, 'png2zen.mrf')
+        expected_zenbrunsli = os.path.join(expected_dir, 'png2zenbrunsli.mrf')
+        expected_zen2zenbrunsli = os.path.join(expected_dir, 'zen2zenbrunsli.mrf')
+        expected_zenbrunsli2zen = os.path.join(expected_dir, 'zenbrunsli2zen.mrf')
         
-        # Get all brunsli MRFs
-        zenbrunsli_mrf = self.get_mrf_files(self.output_zenbrunsli)['mrf']
-        zen2zenbrunsli_mrf = self.get_mrf_files(self.output_zen2zenbrunsli)['mrf']
+        # Get actual output MRFs
+        actual_zen = self.get_mrf_files(self.output_zen)['mrf']
+        actual_zenbrunsli = self.get_mrf_files(self.output_zenbrunsli)['mrf']
+        actual_zen2zenbrunsli = self.get_mrf_files(self.output_zen2zenbrunsli)['mrf']
+        actual_zenbrunsli2zen = self.get_mrf_files(self.output_zenbrunsli2zen)['mrf']
         
-        # Compare standard JPEG MRF sizes
-        zen_size = os.path.getsize(zen_mrf)
-        zen_roundtrip_size = os.path.getsize(zen_roundtrip_mrf)
-        self.assertEqual(zen_size, zen_roundtrip_size,
-                        "Standard JPEG MRFs should have identical metadata size")
+        # Compare each MRF file
+        test_cases = [
+            ('PNG→ZenJPEG', expected_zen, actual_zen),
+            ('PNG→Brunsli', expected_zenbrunsli, actual_zenbrunsli),
+            ('ZenJPEG→Brunsli', expected_zen2zenbrunsli, actual_zen2zenbrunsli),
+            ('Brunsli→ZenJPEG', expected_zenbrunsli2zen, actual_zenbrunsli2zen)
+        ]
         
-        # Compare brunsli MRF sizes
-        zenbrunsli_size = os.path.getsize(zenbrunsli_mrf)
-        zen2zenbrunsli_size = os.path.getsize(zen2zenbrunsli_mrf)
-        self.assertEqual(zenbrunsli_size, zen2zenbrunsli_size,
-                        "Brunsli MRFs should have identical metadata size")
+        for name, expected, actual in test_cases:
+            with open(expected, 'r') as f:
+                expected_content = f.read()
+            with open(actual, 'r') as f:
+                actual_content = f.read()
+            
+            self.assertEqual(expected_content, actual_content,
+                           f"{name} MRF metadata does not match expected")
+            print(f"  ✓ {name} MRF matches expected")
         
-        print(f"✓ MRF metadata consistency verified")
-        print(f"  Standard JPEG MRF size: {zen_size} bytes")
-        print(f"  Brunsli MRF size: {zenbrunsli_size} bytes")
+        print(f"✓ All MRF metadata files match expected references")
 
     @classmethod
     def tearDownClass(cls):

@@ -373,6 +373,80 @@ Options:
                         INFO.  Default: ERROR
 ```
 
+## convert_mrf.py
+
+convert_mrf.py is a tool for converting MRFs between different compression formats. It supports conversions between PNG, standard JPEG (ZenJPEG), and Brunsli-compressed JPEG formats.
+
+### Supported Conversions
+
+* **PNG → JPEG (standard/ZenJPEG)**: Fast conversion using GDAL tools with automatic palette expansion (if necessary)
+* **PNG → Brunsli JPEG**: Tile-by-tile conversion with Brunsli compression (~22% smaller than standard JPEG)
+* **JPEG → Brunsli**: Lossless compression of existing JPEG tiles
+* **Brunsli → JPEG**: Lossless decompression back to standard JPEG
+
+### Conversion Methods
+
+1. **Standard method**: Fast bulk conversion using `gdal_translate` (PNG → standard JPEG only)
+2. **Tile-by-tile method**: Extracts and converts tiles individually
+   - Required for: Brunsli output, Brunsli input, or JPEG input
+   - Uses `cbrunsli`/`dbrunsli` for lossless JPEG ↔ Brunsli conversions
+
+### Usage
+
+```Shell
+Usage: convert_mrf.py <input_mrf> <output_dir> [options]
+
+Positional arguments:
+  input_mrf             Path to input MRF file
+  output_dir            Output directory for converted MRF
+
+Options:
+  -h, --help            show this help message and exit
+  --quality QUALITY     JPEG quality for PNG→JPEG conversion (default: 80,
+                        ignored for JPEG input)
+  --brunsli             Output brunsli-compressed JPEG (omit for standard
+                        JPEG)
+  --temp-dir TEMP_DIR   Temporary directory for intermediate files
+  --no-cleanup          Don't delete temporary files after conversion
+  --sigevent-url SIGEVENT_URL
+                        URL for sigevent monitoring (optional)
+  --output-name OUTPUT_NAME
+                        Custom output MRF filename (optional, defaults to
+                        input filename)
+```
+
+### Examples
+
+Convert PNG to standard JPEG (fastest):
+```Shell
+python3 convert_mrf.py png_input.mrf output_dir/
+```
+
+Convert PNG to Brunsli-compressed JPEG:
+```Shell
+python3 convert_mrf.py png_input.mrf output_dir/ --brunsli
+```
+
+Convert JPEG to Brunsli (lossless):
+```Shell
+python3 convert_mrf.py jpeg_input.mrf output_dir/ --brunsli
+```
+
+Convert Brunsli back to JPEG (lossless):
+```Shell
+python3 convert_mrf.py brunsli_input.mrf output_dir/
+```
+
+Custom JPEG quality and output filename:
+```Shell
+python3 convert_mrf.py input.mrf output_dir/ --quality 90 --output-name custom_name.mrf
+```
+
+### Notes
+
+* Overviews are preserved in all conversions
+* For PNG → Brunsli, overviews are regenerated; for JPEG → Brunsli, existing overviews are converted
+
 ## Contact
 
 Contact us by sending an email to
