@@ -89,7 +89,7 @@ class TestConvertMRF(unittest.TestCase):
                 md5_hash.update(chunk)
         return md5_hash.hexdigest()
     
-    def verify_mrf_metadata(self, mrf_path, expected_compression, has_jfif):
+    def verify_mrf_metadata(self, mrf_path, has_jfif):
         """Verify MRF metadata has correct compression settings."""
         with open(mrf_path, 'r') as f:
             content = f.read()
@@ -134,7 +134,7 @@ class TestConvertMRF(unittest.TestCase):
                         f"Should have 1074 tiles (800 base + 274 overview), got {tile_count}")
         
         # Verify MRF metadata
-        self.verify_mrf_metadata(files['mrf'], 'JPEG', has_jfif=True)
+        self.verify_mrf_metadata(files['mrf'], has_jfif=True)
         
         # Verify data file is not empty
         data_size = os.path.getsize(files['data'])
@@ -174,7 +174,7 @@ class TestConvertMRF(unittest.TestCase):
                         f"Should have 1074 tiles (800 base + 274 overview), got {tile_count}")
         
         # Verify MRF metadata (brunsli = no JFIF)
-        self.verify_mrf_metadata(files['mrf'], 'JPEG', has_jfif=False)
+        self.verify_mrf_metadata(files['mrf'], has_jfif=False)
         
         # Verify data file is not empty and smaller than standard JPEG
         data_size = os.path.getsize(files['data'])
@@ -221,7 +221,7 @@ class TestConvertMRF(unittest.TestCase):
         self.assertEqual(tile_count, 1074, f"Should have 1074 tiles, got {tile_count}")
         
         # Verify MRF metadata
-        self.verify_mrf_metadata(files['mrf'], 'JPEG', has_jfif=False)
+        self.verify_mrf_metadata(files['mrf'], has_jfif=False)
         
         # Verify data file size matches direct PNG→Brunsli conversion
         data_size = os.path.getsize(files['data'])
@@ -263,7 +263,7 @@ class TestConvertMRF(unittest.TestCase):
         self.assertEqual(tile_count, 1074, f"Should have 1074 tiles, got {tile_count}")
         
         # Verify MRF metadata
-        self.verify_mrf_metadata(files['mrf'], 'JPEG', has_jfif=True)
+        self.verify_mrf_metadata(files['mrf'], has_jfif=True)
         
         # Verify round-trip: should match original ZenJPEG size
         data_size = os.path.getsize(files['data'])
