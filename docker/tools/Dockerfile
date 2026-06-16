@@ -96,9 +96,9 @@ RUN git clone --depth=1 https://github.com/google/brunsli.git && \
     cmake -DCMAKE_PREFIX_PATH=/usr/local/ -DCMAKE_INSTALL_PREFIX=/usr/local/ -DCMAKE_INSTALL_LIBDIR=lib -DCMAKE_BUILD_TYPE=Release -B out && \
     cmake --build out --config Release && \
     cd out && make && make install && \
-    export LD_LIBRARY_PATH=:/usr/local/lib && \
     cp /tmp/brunsli/out/artifacts/cbrunsli /usr/local/bin/ && \
     cp /tmp/brunsli/out/artifacts/dbrunsli /usr/local/bin/ && \
+    export LD_LIBRARY_PATH=:/usr/local/lib && \
     ldconfig && \
     cd /tmp/ && rm -rf /tmp/brunsli
 
