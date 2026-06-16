@@ -324,8 +324,152 @@ class TestConvertMRF(unittest.TestCase):
         
         print(f"✓ All MRF metadata files match expected references")
     
+    def test_06_apply_alpha_mask_to_grayscale(self):
+        """Test apply_alpha_mask_to_grayscale function for correct alpha handling."""
+        print("\n=== Test 6: apply_alpha_mask_to_grayscale ===")
+        
+        import numpy as np
+        from osgeo import gdal
+        import tempfile
+        
+        # Create test data with different scenarios:
+        # - Transparent pixels (alpha=0) should become 0
+        # - Black opaque pixels (gray=0, alpha=255) should become 1
+        # - Normal pixels should keep their values
+        test_width = 10
+        test_height = 10
+        
+        # Create test arrays
+        gray_data = np.array([
+            [0, 0, 0, 50, 100, 150, 200, 255, 128, 64],      # Row with black and various grays
+            [0, 10, 20, 30, 40, 50, 60, 70, 80, 90],         # Gradient
+            [255, 255, 255, 255, 255, 0, 0, 0, 0, 0],        # White and black
+            [100, 100, 100, 100, 100, 100, 100, 100, 100, 100],  # Uniform gray
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],                  # All black
+            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],                 # Low values
+            [245, 246, 247, 248, 249, 250, 251, 252, 253, 254],  # High values
+            [0, 50, 0, 100, 0, 150, 0, 200, 0, 250],         # Alternating black
+            [128, 128, 128, 128, 128, 128, 128, 128, 128, 128],  # Mid gray
+            [0, 0, 0, 0, 0, 255, 255, 255, 255, 255]         # Black and white
+        ], dtype=np.uint8)
+        
+        alpha_data = np.array([
+            [255, 255, 0, 255, 255, 255, 255, 255, 0, 255],  # Some transparent
+            [255, 255, 255, 255, 255, 255, 255, 255, 255, 255],  # All opaque
+            [255, 255, 255, 0, 0, 255, 255, 0, 0, 255],      # Mixed
+            [255, 255, 255, 255, 255, 255, 255, 255, 255, 255],  # All opaque
+            [255, 255, 255, 0, 0, 0, 255, 255, 255, 255],    # Black: some opaque, some transparent
+            [255, 255, 255, 255, 255, 255, 255, 255, 255, 255],  # All opaque
+            [255, 255, 255, 255, 255, 255, 255, 255, 255, 255],  # All opaque
+            [255, 0, 255, 0, 255, 0, 255, 0, 255, 0],        # Alternating transparent
+            [255, 255, 255, 255, 255, 255, 255, 255, 255, 255],  # All opaque
+            [255, 255, 0, 0, 0, 255, 255, 0, 0, 0]           # Mixed
+        ], dtype=np.uint8)
+        
+        # Create temporary input file with 2 bands (grayscale + alpha)
+        with tempfile.NamedTemporaryFile(suffix='.tif', delete=False) as tmp_input:
+            input_path = tmp_input.name
+        
+        driver = gdal.GetDriverByName('GTiff')
+        input_ds = driver.Create(input_path, test_width, test_height, 2, gdal.GDT_Byte)
+        input_ds.GetRasterBand(1).WriteArray(gray_data)
+        input_ds.GetRasterBand(2).WriteArray(alpha_data)
+        input_ds.SetGeoTransform([0, 1, 0, 0, 0, -1])  # Simple geotransform
+        input_ds.SetProjection('EPSG:4326')
+        input_ds.FlushCache()
+        input_ds = None
+        
+        # Create temporary output file
+        with tempfile.NamedTemporaryFile(suffix='.tif', delete=False) as tmp_output:
+            output_path = tmp_output.name
+        
+        try:
+            # Run the function
+            convert_mrf.apply_alpha_mask_to_grayscale(input_path, output_path)
+            
+            # Read the result
+            result_ds = gdal.Open(output_path)
+            self.assertIsNotNone(result_ds, "Output file should exist and be readable")
+            
+            # Verify it's single-band
+            self.assertEqual(result_ds.RasterCount, 1, "Output should have 1 band")
+            
+            # Read result data
+            result_data = result_ds.GetRasterBand(1).ReadAsArray()
+            result_ds = None
+            
+            # Verify specific test cases
+            # Row 0, Col 0: gray=0, alpha=255 (black opaque) → should be 1
+            self.assertEqual(result_data[0, 0], 1, 
+                           "Black opaque pixel should become 1")
+            
+            # Row 0, Col 1: gray=0, alpha=255 (black opaque) → should be 1
+            self.assertEqual(result_data[0, 1], 1,
+                           "Black opaque pixel should become 1")
+            
+            # Row 0, Col 2: gray=0, alpha=0 (transparent) → should be 0
+            self.assertEqual(result_data[0, 2], 0,
+                           "Transparent pixel should be 0")
+            
+            # Row 0, Col 3: gray=50, alpha=255 (normal opaque) → should be 50
+            self.assertEqual(result_data[0, 3], 50,
+                           "Normal opaque pixel should keep original value")
+            
+            # Row 0, Col 8: gray=128, alpha=0 (transparent) → should be 0
+            self.assertEqual(result_data[0, 8], 0,
+                           "Transparent pixel should be 0 regardless of gray value")
+            
+            # Row 4, Col 0: gray=0, alpha=255 (black opaque) → should be 1
+            self.assertEqual(result_data[4, 0], 1,
+                           "Black opaque pixel should become 1")
+            
+            # Row 4, Col 3: gray=0, alpha=0 (transparent black) → should be 0
+            self.assertEqual(result_data[4, 3], 0,
+                           "Transparent black pixel should be 0")
+            
+            # Row 7, Col 0: gray=0, alpha=255 (black opaque) → should be 1
+            self.assertEqual(result_data[7, 0], 1,
+                           "Black opaque pixel should become 1")
+            
+            # Row 7, Col 1: gray=50, alpha=0 (transparent) → should be 0
+            self.assertEqual(result_data[7, 1], 0,
+                           "Transparent pixel should be 0")
+            
+            # Verify general rules across all pixels
+            for y in range(test_height):
+                for x in range(test_width):
+                    gray = gray_data[y, x]
+                    alpha = alpha_data[y, x]
+                    result = result_data[y, x]
+                    
+                    if alpha == 0:
+                        # Transparent pixels should always be 0
+                        self.assertEqual(result, 0,
+                                       f"Pixel ({y},{x}): transparent should be 0, got {result}")
+                    elif gray == 0:
+                        # Black opaque pixels should be 1
+                        self.assertEqual(result, 1,
+                                       f"Pixel ({y},{x}): black opaque should be 1, got {result}")
+                    else:
+                        # Normal pixels should keep original value
+                        self.assertEqual(result, gray,
+                                       f"Pixel ({y},{x}): should keep value {gray}, got {result}")
+            
+            print(f"✓ apply_alpha_mask_to_grayscale test passed")
+            print(f"  Verified transparent pixels → 0")
+            print(f"  Verified black opaque pixels → 1")
+            print(f"  Verified normal pixels keep original values")
+            
+        finally:
+            # Clean up temporary files
+            try:
+                os.remove(input_path)
+                os.remove(output_path)
+            except:
+                pass
+    
     @mock_aws
-    def test_06_s3_to_s3_conversion(self):
+    def test_07_s3_to_s3_conversion(self):
         """Test converting MRF from S3 to S3 using mocked S3."""
         print("\n=== Test 6: S3 → S3 Conversion ===")
         

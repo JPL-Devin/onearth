@@ -285,9 +285,19 @@ Tests the MRF conversion tool for converting between PNG, standard JPEG (ZenJPEG
    - Compares generated MRF files against expected reference files
    - Ensures consistent metadata structure across all conversion paths
 
+**Unit Tests:**
+
+6. **apply_alpha_mask_to_grayscale**: Tests the helper function for grayscale+alpha PNG handling
+   - Creates synthetic 10×10 test data with transparent pixels, black opaque pixels, and normal pixels
+   - Verifies transparent pixels (alpha=0) become 0 for Zen mask
+   - Verifies black opaque pixels (gray=0, alpha>0) become 1 (visually black but not transparent)
+   - Verifies normal pixels (gray>0, alpha>0) keep their original values
+   - Validates single-band output and proper file handling
+   - Tests the Zen mask workaround where value=0 means transparent
+
 **S3 Conversion Test:**
 
-6. **S3 Input → S3 Output**: Tests S3 support using moto to mock AWS S3
+7. **S3 Input → S3 Output**: Tests S3 support using moto to mock AWS S3
    - Uploads test MRF to mock S3 bucket
    - Downloads MRF from S3 input location (`s3://bucket/input/`)
    - Performs PNG → JPEG conversion
