@@ -177,8 +177,7 @@ RUN gcc -O3 RGBApng2Palpng.c -o RGBApng2Palpng -lpng
 # pip updates
 RUN python3 -m pip install --user cython==3.1.2
 RUN python3 setup.py build_ext --inplace
-#Removed Shapely as it is already installed
-RUN python3 -m pip install moto[server]==4.2.7 werkzeug==3.0.1
+RUN python3 -m pip install moto[server]==5.2.2 werkzeug==3.0.1
 
 # Install OnEarth utilties, etc.
 WORKDIR /home/oe2/onearth/
