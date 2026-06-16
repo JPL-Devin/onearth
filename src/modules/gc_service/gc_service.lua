@@ -117,27 +117,6 @@ end
 local function sendResponse(code, msg_string)
     return msg_string,
     {
-        ["Content-Type"] = "text/xml"
-    },
-    code
-end
-
-local function formatXMLResponse(code, msg_string)
-    local dom = xml.new("Response", {
-        ["xmlns:ows"] = "http://www.opengis.net/ows/1.1",
-        ["xmlns:xsi"] =  "http://www.w3.org/2001/XMLSchema-instance",
-        ["version"] = "1.1.0",
-        ["xml:lang"] = "en"
-    })
-    
-    local messageNode = xml.elem("Message", {
-        ["code"] = tostring(code),
-        msg_string
-    })
-    dom:add_direct_child(messageNode)
-    
-    return tostring(dom),
-    {
         ["Content-Type"] = "text/xml; charset=UTF-8"
     },
     code
@@ -246,16 +225,20 @@ local function getDateList(endpointConfig, layer, periods_start, periods_end, li
         end
         
         local body = assert(stream:get_body_as_string())
+        local reqDateList = JSON:decode(body)
         if headers:get ":status" ~= "200" then
             print("Error contacting date service: " .. body)
+            if reqDateList["err_msg"] == "Invalid layer or missing periods" then
+                return {}
+            end
+            -- For other errors, pass through the error message and status
+            if reqDateList["err_msg"] then
+                return {["err_msg"] = reqDateList["err_msg"], ["status"] = headers:get ":status"}
+            end
             return nil
         end
 
-        -- decode the request and merge with the results of any previous requests
-        local reqDateList = JSON:decode(body)
-        if reqDateList["err_msg"] == "Invalid Layer" then
-            return {}
-        end
+        -- merge with the results of any previous requests
         if not dateList then
             dateList = reqDateList
         else
@@ -590,7 +573,8 @@ local function makeGTS(endpointConfig)
 
     local layers = getAllGTSTiledGroups(endpointConfig, epsgCode, targetEpsgCode)
     if not layers then
-        return formatXMLResponse(400, "No layers found!")
+        local errorDom = makeExceptionReport("ResourceNotFound", "No layers found!", "", nil)
+        return 404, tostring(errorDom)
     end
 
     for _, tiledGroup in ipairs(layers) do
@@ -599,7 +583,7 @@ local function makeGTS(endpointConfig)
 
     -- Add contents to the rest of the XML
     mainXml:add_direct_child(tiledPatternsNode)
-    return xml.tostring(mainXml)
+    return 200, xml.tostring(mainXml)
 end
 
 
@@ -893,14 +877,17 @@ local function getAllGCLayerNodes(endpointConfig, tmsXml, tmsLimitsXml, epsgCode
         -- Fetch dates for each requested layer individually
         for _, layerId in ipairs(specificLayers) do
             local layerDates = getDateList(endpointConfig, layerId, nil, nil, periods_limit)
-            if layerDates then
+            if layerDates and not layerDates["err_msg"] then
                 for k, v in pairs(layerDates) do
                     dateList[k] = v
                 end
             end
         end
     else
-        dateList = getDateList(endpointConfig, nil, nil, nil, periods_limit)
+        dateListReturned = getDateList(endpointConfig, nil, nil, nil, periods_limit)
+        if dateListReturned and not dateListReturned["err_msg"] then
+            dateList = dateListReturned
+        end
     end
 
     local nodeList = {}
@@ -1004,7 +991,8 @@ local function makeGC(endpointConfig, query_string)
 
     -- Check if layer parameter was provided but empty
     if requestedLayersStr == "" then
-        return formatXMLResponse(400, "You must request a layer if you specify the layer query parameter")
+        local errorDom = makeExceptionReport("InvalidParameterValue", "You must request a layer if you specify the layer query parameter", "LAYER", nil)
+        return 400, tostring(errorDom)
     end
 
     if requestedLayersStr and requestedLayersStr ~= "" then
@@ -1012,13 +1000,15 @@ local function makeGC(endpointConfig, query_string)
         for id in string.gmatch(requestedLayersStr, "([^,]+)") do
             id = string.match(id, "^%s*(.-)%s*$")
             if seenIds[id] then
-                return formatXMLResponse(400, "Duplicate layer names " .. id)
+                local errorDom = makeExceptionReport("InvalidParameterValue", "Duplicate layer names " .. id, "LAYER", nil)
+                return 400, tostring(errorDom)
             end
             seenIds[id] = true
             table.insert(requestedLayerIds, id)
         end
         if #requestedLayerIds == 0 then
-            return formatXMLResponse(400, "Invalid LAYER parameter: could not parse any layer names")
+            local errorDom = makeExceptionReport("InvalidParameterValue", "Invalid LAYER parameter: could not parse any layer names", "LAYER", nil)
+            return 400, tostring(errorDom)
         end
     end
 
@@ -1027,11 +1017,13 @@ local function makeGC(endpointConfig, query_string)
 
     if not allAvailableLayers or #allAvailableLayers == 0 then
         -- If user asked for specific layers and we found none, it's an error
+        local errorDom
         if #requestedLayerIds > 0 then
-             return formatXMLResponse(400, "Requested layer(s) not found: " .. join(requestedLayerIds, ", "))
+            errorDom = makeExceptionReport("ResourceNotFound", "Requested layer(s) not found: " .. join(requestedLayerIds, ", "), "LAYER", nil)
         else
-             return formatXMLResponse(400, "No layers found!")
+            errorDom = makeExceptionReport("ResourceNotFound", "No layers found!", "LAYER", nil)
         end
+        return 404, tostring(errorDom)
     end
 
     -- Check if some requested layers were not found
@@ -1055,7 +1047,8 @@ local function makeGC(endpointConfig, query_string)
 
         if #missingLayers > 0 then
             local errorMsg = "Requested layer(s) not found: " .. join(missingLayers, ", ")
-            return formatXMLResponse(400, errorMsg)
+            local errorDom = makeExceptionReport("ResourceNotFound", errorMsg, "LAYER", nil)
+            return 404, tostring(errorDom)
         end
     end
    
@@ -1084,7 +1077,7 @@ local function makeGC(endpointConfig, query_string)
     end
     dom:maptags(removeServiceMetadataURL)
     dom:add_direct_child(serviceMetadataURL)
-    return xml.tostring(dom)
+    return 200, xml.tostring(dom)
 end
 
 
@@ -1129,7 +1122,7 @@ local function makeTWMSGC(endpointConfig)
     -- Add layers to <Capability> section
     local capabilityElems = dom:get_elements_with_name("Capability")
     if not capabilityElems then
-        return "{\"error\": \"Can't find <Capability> element in header TWMS GetCapabilities header file.\"}"
+        return 400, "{\"error\": \"Can't find <Capability> element in header TWMS GetCapabilities header file.\"}"
     end
     local capabilityElem = capabilityElems[1]
 
@@ -1137,22 +1130,22 @@ local function makeTWMSGC(endpointConfig)
     local layers = getAllGCLayerNodes(endpointConfig, tmsXml, tmsLimitsXml, epsgCode, targetEpsgCode, true)
     
     if not layers then
-        return formatXMLResponse(400, "No layers found!")
+        local errorDom = makeExceptionReport("ResourceNotFound", "No layers found!", "", nil)
+        return 404, tostring(errorDom)
     end
     
     for _, layer in ipairs(layers) do
         baseLayerElem:add_direct_child(layer)
     end
 
-    return doctype .. xml.tostring(dom)
+    return 200, doctype .. xml.tostring(dom)
 end
 
 local function makeDD(endpointConfig, query_string)
-    local xml_header = '<?xml version=\"1.0\" encoding=\"UTF-8\"?>'
     local layer = get_query_param("layer", query_string)
-    local errorDom
     if not layer then 
-        errorDom = makeExceptionReport("MissingParameterValue", "Missing LAYER parameter", "LAYER", errorDom)
+        local errorDom = makeExceptionReport("MissingParameterValue", "Missing LAYER parameter", "LAYER", nil)
+        return 400, tostring(errorDom)
     end
     
     local domains = get_query_param("domains", query_string)
@@ -1220,7 +1213,7 @@ local function makeDD(endpointConfig, query_string)
             end
         end
         if errorDom then
-            return xml_header .. xml.tostring(errorDom)
+            return 400, tostring(errorDom)
         end
 
         -- Parse and validate offset parameter
@@ -1229,10 +1222,8 @@ local function makeDD(endpointConfig, query_string)
         if offset_param then
             offset = tonumber(offset_param)
             if not offset or offset < 0 then
-                errorDom = makeExceptionReport("InvalidParameterValue",
-                        "Offset parameter must be a non-negative integer",
-                        "OFFSET", errorDom)
-                return xml_header .. xml.tostring(errorDom)
+                local errorDom = makeExceptionReport("InvalidParameterValue", "Offset parameter must be a non-negative integer", "OFFSET", nil)
+                return 400, tostring(errorDom)
             end
         end
 
@@ -1245,16 +1236,22 @@ local function makeDD(endpointConfig, query_string)
         if limit_param then
             limit = tonumber(limit_param)
             if not limit or limit < 0 then
-                errorDom = makeExceptionReport("InvalidParameterValue",
-                        "Limit parameter must be a non-negative integer",
-                        "LIMIT", errorDom)
-                return xml_header .. xml.tostring(errorDom)
+                local errorDom = makeExceptionReport("InvalidParameterValue", "Limit parameter must be a non-negative integer", "LIMIT", nil)
+                return 400, tostring(errorDom)
             end
         end
 
         -- Always pass limit to cap the number of periods returned
         -- The time service will still return the total count via periods_in_range
         dateList = getDateList(endpointConfig, layer, periods_start, periods_end, limit, offset)
+        if not dateList then 
+            local errorDom = makeExceptionReport("InternalServerError", "Error contacting date service", "", nil)
+            return 500, tostring(errorDom)
+        end 
+        if dateList["err_msg"] then 
+            local errorDom = makeExceptionReport("InvalidParameterValue", dateList["err_msg"], "", nil)
+            return tonumber(dateList["status"]) or 500, tostring(errorDom)
+        end 
         local periodsList = dateList and dateList[layer] and dateList[layer]["periods"] or {}
         local size = dateList and dateList[layer] and dateList[layer]["periods_in_range"] or "0"
 
@@ -1290,9 +1287,9 @@ local function makeDD(endpointConfig, query_string)
         end
         dom:add_direct_child(timeDomainNode)
     elseif errorDom then
-        return xml_header .. xml.tostring(errorDom)
+        return 400, tostring(errorDom)
     end
-    return xml_header .. xml.tostring(dom)
+    return 200, tostring(dom)
 end
 
 local function generateFromEndpointConfig()
@@ -1314,22 +1311,23 @@ function onearth_gc_service.handler(endpointConfig)
     return function(query_string, _, _)
         local req = get_query_param("request", query_string)
         if not req then
-            return formatXMLResponse(200, 'No REQUEST parameter specified')
+            local errorDom = makeExceptionReport("MissingParameterValue", "No REQUEST parameter specified", "REQUEST", nil)
+            return sendResponse(400, tostring(errorDom))
         end
         req = req:lower()
-        local response
+        local response, status_code
         if req == "wmtsgetcapabilities" then
-            response = makeGC(endpointConfig, query_string)
+            status_code, response = makeGC(endpointConfig, query_string)
         elseif req == "twmsgetcapabilities" then
-            response = makeTWMSGC(endpointConfig)
+            status_code, response = makeTWMSGC(endpointConfig)
         elseif req == "gettileservice" then
-            response = makeGTS(endpointConfig)
+            status_code, response = makeGTS(endpointConfig)
         elseif req == "describedomains" then
-            response = makeDD(endpointConfig, query_string)
+            status_code, response = makeDD(endpointConfig, query_string)
         else
-            response = "Unrecognized REQUEST parameter: '" .. req .. "'. Request must be one of: WMTSGetCapabilities, TWMSGetCapabilities, GetTileService, DescribeDomains"
+            return sendResponse(400, "Unrecognized REQUEST parameter: '" .. req .. "'. Request must be one of: WMTSGetCapabilities, TWMSGetCapabilities, GetTileService, DescribeDomains")
         end
-        return sendResponse(200, response)
+        return sendResponse(status_code, response)
     end
 end
 

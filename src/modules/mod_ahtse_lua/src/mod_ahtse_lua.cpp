@@ -215,9 +215,17 @@ static int handler(request_rec *r)
       status = static_cast<int>(lua_tonumber(L, -1));
       lua_pop(L, 1); // Remove the return code
 
-      // 200 means all OK
-      if (HTTP_OK == status)
+      // Handle status codes properly
+      if (HTTP_OK == status) {
+        // 200 means all OK
         status = OK;
+      } else if (status >= 400) {
+        // For error status codes (4xx, 5xx):
+        // Set the response status explicitly, then return OK to tell Apache
+        // we handled this request successfully with a custom error status
+        r->status = status;
+        status = OK;
+      }
       int type = lua_type(L, -1);
 
       apr_table_t *out_headers = NULL;

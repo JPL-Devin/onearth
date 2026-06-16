@@ -3792,6 +3792,10 @@ class TestDateService(unittest.TestCase):
         layer = TEST_LAYERS['test_1']
         layer_config_path = self.write_config_for_test_layer(layer)
 
+        # Add config key to Redis so layer is recognized as valid
+        r = redis.StrictRedis(host='localhost', port=6379, db=0)
+        r.sadd('layer:{0}:config'.format(layer['layer_id']), 'P1D')
+
         redis_info = None
         if layer.get('static') == 'false':
             redis_info = [
@@ -3805,6 +3809,9 @@ class TestDateService(unittest.TestCase):
 
         if not START_SERVER:
             os.remove(layer_config_path)
+            # Clean up Redis config key
+            redis_client = redis.StrictRedis(host='localhost', port=6379, db=0)
+            redis_client.delete('layer:{0}:config'.format(layer['layer_id']))
             if redis_info:
                 remove_redis_layer(redis_info)
 
@@ -4299,19 +4306,15 @@ class TestDateService(unittest.TestCase):
                 'Response for url: {} is not valid xml. Error: {}'.format(
                     url, e))
 
-        message_elems = response_dom.findall('{*}Message')
-        self.assertNotEqual(
-            len(message_elems), 0,
-            '<Message> not found in error response. Url: {}'.format(url))
         self.assertEqual(
-            len(message_elems), 1,
-            'Incorrect number of <Message> elements found -- should only be 1. Url: {}'
-            .format(url))
+            r.status_code, 400,
+            'Expected HTTP 400 for nonexistent layer, got {}. Url: {}'.format(
+                r.status_code, url))
+
+        exception_elems = response_dom.findall('.//{*}ExceptionText')
         
-        # TODO once we resolve https://bugs.earthdata.nasa.gov/projects/GITC/issues/GITC-7806 we should 
-        # be checking the error code status not the message 
         expected_message = 'You must request a layer if you specify the layer query parameter'
-        found_message = message_elems[0].text
+        found_message = exception_elems[0].text
         self.assertIn(
             expected_message, found_message,
             'Expected error message containing "{}", found "{}". Url: {}'.format(
@@ -4347,19 +4350,15 @@ class TestDateService(unittest.TestCase):
                 'Response for url: {} is not valid xml. Error: {}'.format(
                     url, e))
 
-        message_elems = response_dom.findall('{*}Message')
-        self.assertNotEqual(
-            len(message_elems), 0,
-            '<Message> not found in error response. Url: {}'.format(url))
         self.assertEqual(
-            len(message_elems), 1,
-            'Incorrect number of <Message> elements found -- should only be 1. Url: {}'
-            .format(url))
+            r.status_code, 404,
+            'Expected HTTP 404 for nonexistent layer, got {}. Url: {}'.format(
+                r.status_code, url))
+
+        exception_elems = response_dom.findall('.//{*}ExceptionText')
         
-        # TODO once we resolve https://bugs.earthdata.nasa.gov/projects/GITC/issues/GITC-7806 we should 
-        # be checking the error code status not the message 
         expected_message = 'Requested layer(s) not found: {}'.format(nonexistent_layer)
-        found_message = message_elems[0].text
+        found_message = exception_elems[0].text
         self.assertIn(
             expected_message, found_message,
             'Expected error message containing "{}", found "{}". Url: {}'.format(
@@ -4396,19 +4395,15 @@ class TestDateService(unittest.TestCase):
                 'Response for url: {} is not valid xml. Error: {}'.format(
                     url, e))
 
-        message_elems = response_dom.findall('{*}Message')
-        self.assertNotEqual(
-            len(message_elems), 0,
-            '<Message> not found in error response. Url: {}'.format(url))
         self.assertEqual(
-            len(message_elems), 1,
-            'Incorrect number of <Message> elements found -- should only be 1. Url: {}'
-            .format(url))
+            r.status_code, 404,
+            'Expected HTTP 404 for nonexistent layer, got {}. Url: {}'.format(
+                r.status_code, url))
+
+        exception_elems = response_dom.findall('.//{*}ExceptionText')
         
-        # TODO once we resolve https://bugs.earthdata.nasa.gov/projects/GITC/issues/GITC-7806 we should 
-        # be checking the error code status not the message 
         expected_message = 'Requested layer(s) not found: {}'.format(nonexistent_layer)
-        found_message = message_elems[0].text
+        found_message = exception_elems[0].text
         self.assertIn(
             expected_message, found_message,
             'Expected error message containing "{}", found "{}". Url: {}'.format(
@@ -4440,19 +4435,15 @@ class TestDateService(unittest.TestCase):
                 'Response for url: {} is not valid xml. Error: {}'.format(
                     url, e))
 
-        message_elems = response_dom.findall('{*}Message')
-        self.assertNotEqual(
-            len(message_elems), 0,
-            '<Message> not found in error response. Url: {}'.format(url))
         self.assertEqual(
-            len(message_elems), 1,
-            'Incorrect number of <Message> elements found -- should only be 1. Url: {}'
-            .format(url))
+            r.status_code, 400,
+            'Expected HTTP 400 for duplicate layers layer, got {}. Url: {}'.format(
+                r.status_code, url))
+
+        exception_elems = response_dom.findall('.//{*}ExceptionText')
         
-        # TODO once we resolve https://bugs.earthdata.nasa.gov/projects/GITC/issues/GITC-7806 we should 
-        # be checking the error code status not the message 
-        expected_message = 'Duplicate layer names {}'.format(layer['layer_id'])
-        found_message = message_elems[0].text
+        expected_message = 'Duplicate layer names'
+        found_message = exception_elems[0].text
         self.assertIn(
             expected_message, found_message,
             'Expected error message containing "{}", found "{}". Url: {}'.format(
@@ -4631,6 +4622,72 @@ class TestDateService(unittest.TestCase):
         self.assertEqual(
             len(periods), 25001,
             'Expected 25001 periods with limit=25001, found {}. Url: {}'.format(len(periods), url))
+
+    def test_gc_invalid_request_parameter_returns_400(self):
+        # Test that invalid REQUEST parameter returns HTTP 400
+        apache_config = self.set_up_gc_service('test_gc_invalid_request',
+                                            'EPSG:4326')
+
+        # Create a layer config
+        layer = TEST_LAYERS['test_1']
+        layer_config_path = self.write_config_for_test_layer(layer)
+
+        # Request with invalid REQUEST parameter
+        url = apache_config['endpoint'] + '?request=InvalidRequest'
+        r = requests.get(url)
+
+        if not DEBUG:
+            os.remove(layer_config_path)
+
+        # Check that the response returns 400 Bad Request
+        self.assertEqual(
+            r.status_code, 400,
+            'Expected HTTP 400 for invalid REQUEST parameter, got {}. Url: {}'.format(
+                r.status_code, url))
+
+    def test_gc_missing_request_parameter_returns_400(self):
+        # Test that missing REQUEST parameter returns HTTP 400
+        apache_config = self.set_up_gc_service('test_gc_missing_request',
+                                            'EPSG:4326')
+
+        # Create a layer config
+        layer = TEST_LAYERS['test_1']
+        layer_config_path = self.write_config_for_test_layer(layer)
+
+        # Request without REQUEST parameter
+        url = apache_config['endpoint']
+        r = requests.get(url)
+
+        if not DEBUG:
+            os.remove(layer_config_path)
+
+        # Check that the response returns 400 Bad Request
+        self.assertEqual(
+            r.status_code, 400,
+            'Expected HTTP 400 for missing REQUEST parameter, got {}. Url: {}'.format(
+                r.status_code, url))
+
+    def test_gc_invalid_layer_returns_404(self):
+        # Test that requesting an invalid layer returns HTTP 404
+        apache_config = self.set_up_gc_service('test_gc_invalid_layer_status',
+                                            'EPSG:4326')
+
+        # Create a layer config
+        layer = TEST_LAYERS['test_1']
+        layer_config_path = self.write_config_for_test_layer(layer)
+
+        # Request with invalid layer
+        url = apache_config['endpoint'] + '?request=wmtsgetcapabilities&layer=InvalidLayer'
+        r = requests.get(url)
+
+        if not DEBUG:
+            os.remove(layer_config_path)
+
+        # Check that the response returns 404 Bad Request
+        self.assertEqual(
+            r.status_code, 404,
+            'Expected HTTP 404 for invalid layer, got {}. Url: {}'.format(
+                r.status_code, url))
 
     @classmethod
     def tearDownClass(self):

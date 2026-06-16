@@ -1122,7 +1122,7 @@ class TestDateService(unittest.TestCase):
                 'Error with requesting periods where there is no data within a range: got {0}, expected {1}.'.format(returned_periods, expected_periods))
 
     def test_periods_no_data(self):
-        expected_message = {'err_msg': 'Invalid Layer'}
+        expected_message = {'err_msg': 'Invalid Layer', 'status': 404}
         response_body, headers, status_code = self.handler('layer=nonexistent_layer', {}, {})
         res = json.loads(response_body)
         self.assertEqual(
@@ -1535,6 +1535,109 @@ class TestDateService(unittest.TestCase):
                 'Error with date snapping with a time range for layer {0}: for period {1}, date {2} was requested and date {3} was returned. Should be {4}'
                 .format(test_layer[0], test_layer[2], test_layer[3], result,
                         test_layer[4]))
+
+    def test_time_service_invalid_date_returns_400(self):
+        # Test that invalid date format returns HTTP 400
+        test_layer = ['test_invalid_date_layer',
+                      '2015-01-01/2015-01-05/P1D',
+                      'dates',
+                      'invalid-date',
+                      'Invalid Date']
+
+        seed_redis_data(test_layer)
+        
+        # Add config key to Redis so layer is recognized as valid
+        r = redis.StrictRedis(host='localhost', port=6379, db=0)
+        r.sadd('layer:{0}:config'.format(test_layer[0]), 'P1D')
+
+        query_string = 'layer={0}&datetime={1}'.format(test_layer[0], test_layer[3])
+        response_body, headers, status_code = self.handler(query_string, {}, {})
+        res = json.loads(response_body)
+
+        if not DEBUG:
+            # Clean up Redis config key
+            r.delete('layer:{0}:config'.format(test_layer[0]))
+            remove_redis_layer(test_layer)
+
+        # Check that the response returns 400 Bad Request
+        self.assertEqual(
+            status_code, 400,
+            'Expected HTTP 400 for invalid date format, got {}'.format(status_code))
+
+        # Verify error message is present
+        self.assertIn(
+            'err_msg', res,
+            'Expected error message in response for invalid date')
+
+    def test_time_service_invalid_layer_returns_404(self):
+        # Test that invalid layer returns HTTP 404
+        query_string = 'layer=NonExistentLayer&datetime=2015-01-01'
+        response_body, headers, status_code = self.handler(query_string, {}, {})
+        res = json.loads(response_body)
+
+        # Check that the response returns 404 Not found
+        self.assertEqual(
+            status_code, 404,
+            'Expected HTTP 404 for invalid layer, got {}'.format(status_code))
+
+        # Verify error message is present
+        self.assertIn(
+            'err_msg', res,
+            'Expected error message in response for invalid layer')
+
+    def test_time_service_invalid_limit_returns_400(self):
+        # Test that non-integer limit parameter returns HTTP 400
+        test_layer = ['test_invalid_limit_layer',
+                      '2015-01-01/2015-01-05/P1D',
+                      'dates',
+                      '2015-01-03',
+                      '2015-01-03']
+
+        seed_redis_data(test_layer)
+
+        query_string = 'layer={0}&limit=not_a_number'.format(test_layer[0])
+        response_body, headers, status_code = self.handler(query_string, {}, {})
+        res = json.loads(response_body)
+
+        if not DEBUG:
+            remove_redis_layer(test_layer)
+
+        # Check that the response returns 400 Bad Request
+        self.assertEqual(
+            status_code, 400,
+            'Expected HTTP 400 for invalid limit parameter, got {}'.format(status_code))
+
+        # Verify error message is present
+        self.assertIn(
+            'err_msg', res,
+            'Expected error message in response for invalid limit')
+
+    def test_time_service_invalid_periods_start_returns_400(self):
+        # Test that invalid periods_start parameter returns HTTP 400
+        test_layer = ['test_invalid_periods_start_layer',
+                      '2015-01-01/2015-01-05/P1D',
+                      'dates',
+                      '2015-01-03',
+                      '2015-01-03']
+
+        seed_redis_data(test_layer)
+
+        query_string = 'layer={0}&periods_start=invalid-date-format'.format(test_layer[0])
+        response_body, headers, status_code = self.handler(query_string, {}, {})
+        res = json.loads(response_body)
+
+        if not DEBUG:
+            remove_redis_layer(test_layer)
+
+        # Check that the response returns 400 Bad Request
+        self.assertEqual(
+            status_code, 400,
+            'Expected HTTP 400 for invalid periods_start parameter, got {}'.format(status_code))
+
+        # Verify error message is present
+        self.assertIn(
+            'err_msg', res,
+            'Expected error message in response for invalid periods_start')
 
 if __name__ == '__main__':
     # Parse options before running tests
