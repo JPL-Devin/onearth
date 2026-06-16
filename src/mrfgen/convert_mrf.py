@@ -78,6 +78,9 @@ import re
 from pathlib import Path
 import boto3
 import botocore
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from multiprocessing import cpu_count
+import threading
 
 DEFAULT_JPEG_QUALITY = 80
 DEFAULT_BLOCK_SIZE = 512
@@ -448,16 +451,173 @@ def convert_png_to_jpeg_standard(input_mrf, output_dir, quality=DEFAULT_JPEG_QUA
     return True
 
 
-def convert_tile_by_tile(input_mrf_path, output_dir, temp_dir_base, no_cleanup, input_compression, output_compression, quality=DEFAULT_JPEG_QUALITY, output_name=None):
+def process_jpeg_brunsli_tile(args):
     """
-    Convert MRF by processing tiles individually.
+    Worker function to process a single JPEG ↔ Brunsli tile conversion.
+    Returns: (tile_idx, output_tile_data) or (tile_idx, None) for empty tiles
+    """
+    tile_idx, src_offset, src_size, source_data_path, temp_dir, input_compression, output_compression = args
+    
+    if src_size == 0:
+        return (tile_idx, None)
+    
+    # Read source data
+    with open(source_data_path, 'rb') as source_data:
+        source_data.seek(src_offset)
+        source_tile_data = source_data.read(src_size)
+    
+    if len(source_tile_data) != src_size:
+        raise ValueError(f"Failed to read complete tile data at tile {tile_idx}")
+    
+    # Convert using cbrunsli/dbrunsli
+    if input_compression == 'JPEG' and output_compression == 'JPEG_BRUNSLI':
+        # JPEG → Brunsli
+        jpeg_file = os.path.join(temp_dir, f"tile_{tile_idx}_{os.getpid()}.jpg")
+        brunsli_file = os.path.join(temp_dir, f"tile_{tile_idx}_{os.getpid()}.brn")
+        
+        with open(jpeg_file, 'wb') as f:
+            f.write(source_tile_data)
+        
+        cbrunsli_cmd = ['cbrunsli', jpeg_file, brunsli_file]
+        run_command(cbrunsli_cmd, quiet=True)
+        
+        with open(brunsli_file, 'rb') as f:
+            output_tile_data = f.read()
+        
+        try:
+            os.remove(jpeg_file)
+            os.remove(brunsli_file)
+        except:
+            pass
+    
+    elif input_compression == 'JPEG_BRUNSLI' and output_compression == 'JPEG':
+        # Brunsli → JPEG
+        brunsli_file = os.path.join(temp_dir, f"tile_{tile_idx}_{os.getpid()}.brn")
+        jpeg_file = os.path.join(temp_dir, f"tile_{tile_idx}_{os.getpid()}.jpg")
+        
+        with open(brunsli_file, 'wb') as f:
+            f.write(source_tile_data)
+        
+        dbrunsli_cmd = ['dbrunsli', brunsli_file, jpeg_file]
+        run_command(dbrunsli_cmd, quiet=True)
+        
+        with open(jpeg_file, 'rb') as f:
+            output_tile_data = f.read()
+        
+        try:
+            os.remove(brunsli_file)
+            os.remove(jpeg_file)
+        except:
+            pass
+    
+    return (tile_idx, output_tile_data)
+
+
+def process_png_tile(args):
+    """
+    Worker function to process a single PNG → JPEG tile conversion.
+    Returns: (tile_idx, output_tile_data)
+    """
+    (tile_idx, tx, ty, blocksize, size_x, size_y, input_mrf_path, temp_dir, 
+     quality, num_bands, bands, gdal_config) = args
+    
+    x_off = tx * blocksize
+    y_off = ty * blocksize
+    x_size = min(blocksize, size_x - x_off)
+    y_size = min(blocksize, size_y - y_off)
+    
+    # Use process ID to avoid conflicts between workers
+    pid = os.getpid()
+    tile_png = os.path.join(temp_dir, f"tile_{tile_idx}_{pid}.png")
+    
+    # Extract tile as PNG
+    extract_cmd = [
+        'gdal_translate', '-q'
+    ] + gdal_config + [
+        '-of', 'PNG',
+        '-srcwin', str(x_off), str(y_off), str(x_size), str(y_size),
+        input_mrf_path,
+        tile_png
+    ]
+    run_command(extract_cmd, quiet=True)
+    
+    # Check if source is paletted
+    is_paletted = (num_bands == 1 and 
+                   bands[0].get('colorInterpretation') == 'Palette')
+    
+    # Check if source is grayscale with alpha
+    is_grayscale_alpha_tile = (num_bands == 2 and 
+                               bands[0].get('colorInterpretation') == 'Gray' and
+                               bands[1].get('colorInterpretation') == 'Alpha')
+    
+    # For grayscale+alpha, apply alpha mask preprocessing
+    if is_grayscale_alpha_tile:
+        tile_processed = os.path.join(temp_dir, f"tile_processed_{tile_idx}_{pid}.tif")
+        apply_alpha_mask_to_grayscale(tile_png, tile_processed)
+        tile_png = tile_processed
+    
+    # Convert to JPEG MRF
+    tile_mrf = os.path.join(temp_dir, f"tile_{tile_idx}_{pid}.mrf")
+    convert_cmd = [
+        'gdal_translate', '-q'
+    ] + gdal_config
+    
+    if is_paletted:
+        convert_cmd.extend(['-expand', 'rgb'])
+    elif is_grayscale_alpha_tile:
+        convert_cmd.extend(['-b', '1'])
+    else:
+        for i in range(1, min(4, num_bands + 1)):
+            convert_cmd.extend(['-b', str(i)])
+    
+    convert_cmd.extend([
+        '-of', 'MRF',
+        '-co', 'COMPRESS=JPEG',
+        '-co', f'BLOCKSIZE={x_size}',
+        '-co', f'QUALITY={quality}',
+        tile_png,
+        tile_mrf
+    ])
+    run_command(convert_cmd, quiet=True)
+    
+    # Read JPEG data
+    tile_pjg = tile_mrf.replace('.mrf', '.pjg')
+    with open(tile_pjg, 'rb') as f:
+        jpeg_data = f.read()
+    
+    # Clean up temp files
+    try:
+        os.remove(tile_png)
+        os.remove(tile_mrf)
+        os.remove(tile_pjg)
+        os.remove(tile_mrf.replace('.mrf', '.idx'))
+        if is_grayscale_alpha_tile:
+            tile_processed = os.path.join(temp_dir, f"tile_processed_{tile_idx}_{pid}.tif")
+            if os.path.exists(tile_processed):
+                os.remove(tile_processed)
+    except:
+        pass
+    
+    return (tile_idx, jpeg_data)
+
+
+def convert_tile_by_tile(input_mrf_path, output_dir, temp_dir_base, no_cleanup, input_compression, output_compression, quality=DEFAULT_JPEG_QUALITY, output_name=None, num_workers=None):
+    """
+    Convert MRF by processing tiles individually with parallel processing.
     Required for: PNG→Brunsli, JPEG→Brunsli, or Brunsli→JPEG conversions.
     Uses cbrunsli/dbrunsli for lossless JPEG ↔ Brunsli conversions.
+    
+    Args:
+        num_workers: Number of parallel workers (default: CPU count)
     """
     conversion_name = f"{input_compression} → {output_compression}"
-    print(f"Converting {conversion_name} (Tile-by-Tile Method)")
+    print(f"Converting {conversion_name} (Tile-by-Tile Method - Parallel)")
     print(f"Input:  {input_mrf_path}")
     print(f"Output: {output_dir}")
+    
+    if num_workers is None:
+        num_workers = cpu_count()
+    print(f"Workers: {num_workers}")
     print("-" * 60)
     
     temp_dir = None
@@ -582,167 +742,89 @@ def convert_tile_by_tile(input_mrf_path, output_dir, temp_dir_base, no_cleanup, 
         
         # Process based on conversion type
         if input_compression in ['JPEG', 'JPEG_BRUNSLI'] and output_compression in ['JPEG', 'JPEG_BRUNSLI']:
-            # JPEG ↔ Brunsli: Use cbrunsli/dbrunsli for lossless conversion
-            with open(source_data_path, 'rb') as source_data:
-                with open(source_idx_path, 'rb') as source_idx:
-                    for tile_idx in range(total_index_entries):
-                        idx_entry = source_idx.read(16)
-                        if len(idx_entry) < 16:
-                            break
-                        
-                        src_offset, src_size = struct.unpack('>QQ', idx_entry)
-                        
-                        if src_size == 0:
-                            # Empty tile
-                            idx_file.write(struct.pack('>QQ', 0, 0))
-                            continue
-                        
-                        # Read source data
-                        source_data.seek(src_offset)
-                        source_tile_data = source_data.read(src_size)
-                        
-                        if len(source_tile_data) != src_size:
-                            raise ValueError(f"Failed to read complete tile data at tile {tile_idx}")
-                        
-                        # Convert using cbrunsli/dbrunsli
-                        if input_compression == 'JPEG' and output_compression == 'JPEG_BRUNSLI':
-                            # JPEG → Brunsli
-                            jpeg_file = os.path.join(temp_dir, f"tile_{tile_idx}.jpg")
-                            brunsli_file = os.path.join(temp_dir, f"tile_{tile_idx}.brn")
-                            
-                            with open(jpeg_file, 'wb') as f:
-                                f.write(source_tile_data)
-                            
-                            cbrunsli_cmd = ['cbrunsli', jpeg_file, brunsli_file]
-                            run_command(cbrunsli_cmd, quiet=True)
-                            
-                            with open(brunsli_file, 'rb') as f:
-                                output_tile_data = f.read()
-                            
-                            try:
-                                os.remove(jpeg_file)
-                                os.remove(brunsli_file)
-                            except:
-                                pass
-                        
-                        elif input_compression == 'JPEG_BRUNSLI' and output_compression == 'JPEG':
-                            # Brunsli → JPEG
-                            brunsli_file = os.path.join(temp_dir, f"tile_{tile_idx}.brn")
-                            jpeg_file = os.path.join(temp_dir, f"tile_{tile_idx}.jpg")
-                            
-                            with open(brunsli_file, 'wb') as f:
-                                f.write(source_tile_data)
-                            
-                            dbrunsli_cmd = ['dbrunsli', brunsli_file, jpeg_file]
-                            run_command(dbrunsli_cmd, quiet=True)
-                            
-                            with open(jpeg_file, 'rb') as f:
-                                output_tile_data = f.read()
-                            
-                            try:
-                                os.remove(brunsli_file)
-                                os.remove(jpeg_file)
-                            except:
-                                pass
-                        
-                        tile_size = len(output_tile_data)
-                        data_file.write(output_tile_data)
-                        idx_file.write(struct.pack('>QQ', current_offset, tile_size))
-                        
-                        current_offset += tile_size
+            # JPEG ↔ Brunsli: Use cbrunsli/dbrunsli for lossless conversion (parallel)
+            
+            # Read all tile metadata first
+            tile_tasks = []
+            with open(source_idx_path, 'rb') as source_idx:
+                for tile_idx in range(total_index_entries):
+                    idx_entry = source_idx.read(16)
+                    if len(idx_entry) < 16:
+                        break
+                    
+                    src_offset, src_size = struct.unpack('>QQ', idx_entry)
+                    tile_tasks.append((tile_idx, src_offset, src_size, str(source_data_path), 
+                                      temp_dir, input_compression, output_compression))
+            
+            # Process tiles in parallel
+            tile_results = {}
+            progress_lock = threading.Lock()
+            
+            with ProcessPoolExecutor(max_workers=num_workers) as executor:
+                futures = {executor.submit(process_jpeg_brunsli_tile, task): task[0] 
+                          for task in tile_tasks}
+                
+                for future in as_completed(futures):
+                    tile_idx, output_tile_data = future.result()
+                    tile_results[tile_idx] = output_tile_data
+                    
+                    with progress_lock:
                         processed += 1
-                        
-                        if processed % 100 == 0 or tile_idx == total_index_entries - 1:
+                        if processed % 100 == 0 or processed == total_index_entries:
                             print(f"  Processed {processed}/{total_index_entries} tiles...")
+            
+            # Write tiles in order (sequential stitching phase)
+            print(f"  Stitching {total_index_entries} tiles in order...")
+            for tile_idx in range(total_index_entries):
+                output_tile_data = tile_results[tile_idx]
+                
+                if output_tile_data is None:
+                    # Empty tile
+                    idx_file.write(struct.pack('>QQ', 0, 0))
+                else:
+                    tile_size = len(output_tile_data)
+                    data_file.write(output_tile_data)
+                    idx_file.write(struct.pack('>QQ', current_offset, tile_size))
+                    current_offset += tile_size
         
         else:
-            # PNG → JPEG/Brunsli: Extract and encode tiles
+            # PNG → JPEG/Brunsli: Extract and encode tiles (parallel)
+            
+            # Build task list for all tiles
+            tile_tasks = []
+            tile_idx = 0
             for ty in range(tiles_y):
                 for tx in range(tiles_x):
-                    x_off = tx * blocksize
-                    y_off = ty * blocksize
-                    x_size = min(blocksize, size_x - x_off)
-                    y_size = min(blocksize, size_y - y_off)
+                    tile_tasks.append((tile_idx, tx, ty, blocksize, size_x, size_y, 
+                                      input_mrf_path, temp_dir, quality, num_bands, 
+                                      bands, gdal_config))
+                    tile_idx += 1
+            
+            # Process tiles in parallel
+            tile_results = {}
+            progress_lock = threading.Lock()
+            
+            with ProcessPoolExecutor(max_workers=num_workers) as executor:
+                futures = {executor.submit(process_png_tile, task): task[0] 
+                          for task in tile_tasks}
+                
+                for future in as_completed(futures):
+                    tile_idx, jpeg_data = future.result()
+                    tile_results[tile_idx] = jpeg_data
                     
-                    # Extract tile as PNG
-                    tile_png = os.path.join(temp_dir, f"tile.png")
-                    extract_cmd = [
-                        'gdal_translate', '-q'
-                    ] + gdal_config + [
-                        '-of', 'PNG',
-                        '-srcwin', str(x_off), str(y_off), str(x_size), str(y_size),
-                        input_mrf_path,
-                        tile_png
-                    ]
-                    run_command(extract_cmd, quiet=True)
-                    
-                    # Check if source is paletted
-                    is_paletted = (num_bands == 1 and 
-                                   bands[0].get('colorInterpretation') == 'Palette')
-                    
-                    # Check if source is grayscale with alpha
-                    is_grayscale_alpha_tile = (num_bands == 2 and 
-                                               bands[0].get('colorInterpretation') == 'Gray' and
-                                               bands[1].get('colorInterpretation') == 'Alpha')
-                    
-                    # For grayscale+alpha, apply alpha mask preprocessing
-                    if is_grayscale_alpha_tile:
-                        tile_processed = os.path.join(temp_dir, f"tile_processed.tif")
-                        apply_alpha_mask_to_grayscale(tile_png, tile_processed)
-                        # Use processed tile for conversion
-                        tile_png = tile_processed
-                    
-                    # Convert to JPEG MRF
-                    tile_mrf = os.path.join(temp_dir, f"tile.mrf")
-                    convert_cmd = [
-                        'gdal_translate', '-q'
-                    ] + gdal_config
-                    
-                    if is_paletted:
-                        # For paletted images, use -expand rgb to convert to 3-band RGB
-                        convert_cmd.extend(['-expand', 'rgb'])
-                    elif is_grayscale_alpha_tile:
-                        # For grayscale+alpha, we've already applied alpha - just use band 1
-                        convert_cmd.extend(['-b', '1'])
-                    else:
-                        # For non-paletted, add band selection (up to 3 bands for RGB JPEG)
-                        for i in range(1, min(4, num_bands + 1)):
-                            convert_cmd.extend(['-b', str(i)])
-                    
-                    convert_cmd.extend([
-                        '-of', 'MRF',
-                        '-co', 'COMPRESS=JPEG',
-                        '-co', f'BLOCKSIZE={x_size}',
-                        '-co', f'QUALITY={quality}',
-                        tile_png,
-                        tile_mrf
-                    ])
-                    run_command(convert_cmd, quiet=True)
-                    
-                    # Read JPEG data
-                    tile_pjg = tile_mrf.replace('.mrf', '.pjg')
-                    with open(tile_pjg, 'rb') as f:
-                        jpeg_data = f.read()
-                    
-                    # For PNG input, we already have JPEG data (with or without JFIF based on MRF metadata)
-                    # No need to use cbrunsli - the JFIF option in MRF metadata controls the format
-                    tile_size = len(jpeg_data)
-                    data_file.write(jpeg_data)
-                    idx_file.write(struct.pack('>QQ', current_offset, tile_size))
-                    
-                    current_offset += tile_size
-                    
-                    try:
-                        os.remove(tile_png)
-                        os.remove(tile_mrf)
-                        os.remove(tile_pjg)
-                        os.remove(tile_mrf.replace('.mrf', '.idx'))
-                    except:
-                        pass
-                    
-                    processed += 1
-                    if processed % 100 == 0 or processed == total_tiles:
-                        print(f"  Processed {processed}/{total_tiles} tiles...")
+                    with progress_lock:
+                        processed += 1
+                        if processed % 100 == 0 or processed == total_tiles:
+                            print(f"  Processed {processed}/{total_tiles} tiles...")
+            
+            # Write tiles in order (sequential stitching phase)
+            print(f"  Stitching {total_tiles} tiles in order...")
+            for tile_idx in range(total_tiles):
+                jpeg_data = tile_results[tile_idx]
+                tile_size = len(jpeg_data)
+                data_file.write(jpeg_data)
+                idx_file.write(struct.pack('>QQ', current_offset, tile_size))
+                current_offset += tile_size
         
         data_file.close()
         idx_file.close()
@@ -830,6 +912,8 @@ S3 paths must be in the format: s3://bucket-name/key/path
                        help="URL for sigevent monitoring (optional)")
     parser.add_argument("-o", "--output-name", dest="output_name",
                        help="Custom output MRF filename (optional, defaults to input filename)")
+    parser.add_argument("-w", "--workers", type=int, default=None,
+                       help=f"Number of parallel workers for tile processing (default: CPU count = {cpu_count()})")
     
     args = parser.parse_args()
     
@@ -926,7 +1010,8 @@ S3 paths must be in the format: s3://bucket-name/key/path
                 input_compression,
                 output_compression,
                 args.quality,
-                args.output_name
+                args.output_name,
+                args.workers
             )
         
         # Upload to S3 if output is S3 path
