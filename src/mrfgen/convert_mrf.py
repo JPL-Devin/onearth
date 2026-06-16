@@ -26,6 +26,11 @@ Conversion methods:
      - Required for: brunsli output, brunsli input, or JPEG input
      - Uses cbrunsli/dbrunsli for lossless JPEG ↔ Brunsli conversions
 
+S3 Support:
+  - Input and output paths can be S3 URIs (s3://bucket/key)
+  - Automatically downloads from S3 and uploads results
+  - Requires AWS credentials configured (environment, credentials file, or IAM role)
+
 Usage:
     python3 convert_mrf.py <input_mrf> <output_dir> [options]
 
@@ -48,6 +53,15 @@ Examples:
     # Custom output filename
     python3 convert_mrf.py input.mrf output_dir/ --output-name custom_name.mrf
     
+    # S3 to S3 conversion
+    python3 convert_mrf.py s3://bucket/input.mrf s3://bucket/output/
+    
+    # S3 to local
+    python3 convert_mrf.py s3://bucket/input.mrf /local/output/
+    
+    # Local to S3
+    python3 convert_mrf.py /local/input.mrf s3://bucket/output/
+    
     # With sigevent monitoring (for production pipelines)
     python3 convert_mrf.py input.mrf output_dir/ --sigevent-url http://monitor/sigevent
 """
@@ -62,12 +76,139 @@ import struct
 import json
 import re
 from pathlib import Path
+import boto3
+import botocore
 
 DEFAULT_JPEG_QUALITY = 80
 DEFAULT_BLOCK_SIZE = 512
 
 # Global sigevent URL for monitoring (set via command line or None for standalone use)
 SIGEVENT_URL = None
+
+
+def is_s3_path(path):
+    """Check if a path is an S3 URI."""
+    return path.startswith('s3://')
+
+
+def parse_s3_path(s3_path):
+    """Parse S3 path into bucket and key."""
+    if not s3_path.startswith('s3://'):
+        raise ValueError(f"Invalid S3 path: {s3_path}")
+    
+    path_parts = s3_path[5:].split('/', 1)
+    bucket = path_parts[0]
+    key = path_parts[1] if len(path_parts) > 1 else ''
+    
+    return bucket, key
+
+
+def download_from_s3(s3_path, local_path, s3_client=None):
+    """Download a file from S3 to local path."""
+    if s3_client is None:
+        s3_client = boto3.client('s3')
+    
+    bucket, key = parse_s3_path(s3_path)
+    
+    print(f"Downloading from S3: {s3_path} -> {local_path}")
+    os.makedirs(os.path.dirname(local_path), exist_ok=True)
+    
+    try:
+        s3_client.download_file(bucket, key, local_path)
+        return True
+    except botocore.exceptions.ClientError as e:
+        print(f"Error downloading from S3: {e}")
+        return False
+
+
+def upload_to_s3(local_path, s3_path, s3_client=None):
+    """Upload a file from local path to S3."""
+    if s3_client is None:
+        s3_client = boto3.client('s3')
+    
+    bucket, key = parse_s3_path(s3_path)
+    
+    print(f"Uploading to S3: {local_path} -> {s3_path}")
+    
+    try:
+        s3_client.upload_file(local_path, bucket, key)
+        return True
+    except botocore.exceptions.ClientError as e:
+        print(f"Error uploading to S3: {e}")
+        return False
+
+
+def download_mrf_from_s3(s3_mrf_path, local_dir, s3_client=None):
+    """Download MRF and its associated files (.idx, .ppg/.pjg) from S3."""
+    if s3_client is None:
+        s3_client = boto3.client('s3')
+    
+    bucket, key = parse_s3_path(s3_mrf_path)
+    base_key = key.rsplit('.', 1)[0] if '.' in key else key
+    base_name = os.path.basename(base_key)
+    
+    # Download .mrf file
+    local_mrf = os.path.join(local_dir, base_name + '.mrf')
+    if not download_from_s3(s3_mrf_path, local_mrf, s3_client):
+        raise ValueError(f"Failed to download MRF file: {s3_mrf_path}")
+    
+    # Download .idx file
+    s3_idx = f"s3://{bucket}/{base_key}.idx"
+    local_idx = os.path.join(local_dir, base_name + '.idx')
+    if not download_from_s3(s3_idx, local_idx, s3_client):
+        raise ValueError(f"Failed to download IDX file: {s3_idx}")
+    
+    # Try to download .ppg or .pjg file
+    for ext in ['.ppg', '.pjg']:
+        s3_data = f"s3://{bucket}/{base_key}{ext}"
+        local_data = os.path.join(local_dir, base_name + ext)
+        if download_from_s3(s3_data, local_data, s3_client):
+            break
+    else:
+        raise ValueError(f"Failed to download data file (.ppg or .pjg): {base_key}")
+    
+    return local_mrf
+
+
+def upload_mrf_to_s3(local_mrf, s3_output_path, s3_client=None):
+    """Upload MRF and its associated files (.idx, .pjg) to S3."""
+    if s3_client is None:
+        s3_client = boto3.client('s3')
+    
+    local_mrf_path = Path(local_mrf)
+    base_name = local_mrf_path.stem
+    local_dir = local_mrf_path.parent
+    
+    # Parse S3 output path
+    bucket, key_prefix = parse_s3_path(s3_output_path)
+    
+    # If key_prefix ends with .mrf, use it as the base
+    if key_prefix.endswith('.mrf'):
+        s3_base = key_prefix.rsplit('.', 1)[0]
+    else:
+        # Otherwise, append the base name to the prefix
+        s3_base = os.path.join(key_prefix, base_name).replace('\\', '/')
+    
+    # Upload .mrf file
+    local_mrf_file = str(local_mrf_path)
+    s3_mrf = f"s3://{bucket}/{s3_base}.mrf"
+    if not upload_to_s3(local_mrf_file, s3_mrf, s3_client):
+        raise ValueError(f"Failed to upload MRF file: {s3_mrf}")
+    
+    # Upload .idx file
+    local_idx = os.path.join(local_dir, base_name + '.idx')
+    s3_idx = f"s3://{bucket}/{s3_base}.idx"
+    if not upload_to_s3(local_idx, s3_idx, s3_client):
+        raise ValueError(f"Failed to upload IDX file: {s3_idx}")
+    
+    # Upload .pjg file
+    local_pjg = os.path.join(local_dir, base_name + '.pjg')
+    s3_pjg = f"s3://{bucket}/{s3_base}.pjg"
+    if not upload_to_s3(local_pjg, s3_pjg, s3_client):
+        raise ValueError(f"Failed to upload data file: {s3_pjg}")
+    
+    print(f"\nMRF successfully uploaded to S3: {s3_mrf}")
+    return s3_mrf
 
 
 def run_command(command, quiet=False):
@@ -569,13 +710,23 @@ Examples:
   
   # Custom quality
   python3 convert_mrf.py input.mrf output_dir/ --quality 90
+  
+  # S3 input and output
+  python3 convert_mrf.py s3://bucket/path/input.mrf s3://bucket/path/output/
+  
+  # S3 input, local output
+  python3 convert_mrf.py s3://bucket/path/input.mrf /local/output/
+  
+  # Local input, S3 output
+  python3 convert_mrf.py /local/input.mrf s3://bucket/path/output/
 
 Note: JPEG ↔ Brunsli conversions use cbrunsli/dbrunsli for lossless conversions.
+S3 paths must be in the format: s3://bucket-name/key/path
         """
     )
     
-    parser.add_argument("input_mrf", help="Path to input MRF file")
-    parser.add_argument("output_dir", help="Output directory for converted MRF")
+    parser.add_argument("input_mrf", help="Path to input MRF file (local path or s3://bucket/key)")
+    parser.add_argument("output_dir", help="Output directory for converted MRF (local path or s3://bucket/key)")
     parser.add_argument("--quality", type=int, default=DEFAULT_JPEG_QUALITY,
                        help=f"JPEG quality for PNG→JPEG conversion (default: {DEFAULT_JPEG_QUALITY}, ignored for JPEG input)")
     parser.add_argument("--brunsli", action="store_true",
@@ -595,10 +746,34 @@ Note: JPEG ↔ Brunsli conversions use cbrunsli/dbrunsli for lossless conversion
     global SIGEVENT_URL
     SIGEVENT_URL = args.sigevent_url
     
-    # Validate input
-    if not os.path.exists(args.input_mrf):
-        print(f"Error: Input MRF not found: {args.input_mrf}")
-        sys.exit(1)
+    # Initialize S3 client if needed
+    s3_client = None
+    if is_s3_path(args.input_mrf) or is_s3_path(args.output_dir):
+        try:
+            s3_client = boto3.client('s3')
+        except Exception as e:
+            print(f"Error: Failed to initialize S3 client: {e}")
+            sys.exit(1)
+    
+    # Handle S3 input
+    temp_input_dir = None
+    input_mrf_path = args.input_mrf
+    
+    if is_s3_path(args.input_mrf):
+        print("Input is S3 path, downloading MRF files...")
+        temp_input_dir = tempfile.mkdtemp(prefix='convert_mrf_input_')
+        try:
+            input_mrf_path = download_mrf_from_s3(args.input_mrf, temp_input_dir, s3_client)
+        except Exception as e:
+            print(f"Error downloading from S3: {e}")
+            if temp_input_dir:
+                shutil.rmtree(temp_input_dir, ignore_errors=True)
+            sys.exit(1)
+    else:
+        # Validate local input
+        if not os.path.exists(args.input_mrf):
+            print(f"Error: Input MRF not found: {args.input_mrf}")
+            sys.exit(1)
     
     if args.quality < 1 or args.quality > 100:
         print("Error: Quality must be between 1 and 100")
@@ -607,10 +782,12 @@ Note: JPEG ↔ Brunsli conversions use cbrunsli/dbrunsli for lossless conversion
     # Detect input compression
     print("Detecting input MRF compression...")
     try:
-        input_compression = detect_compression(args.input_mrf)
+        input_compression = detect_compression(input_mrf_path)
         print(f"Input compression: {input_compression}")
     except Exception as e:
         print(f"Error: {e}")
+        if temp_input_dir:
+            shutil.rmtree(temp_input_dir, ignore_errors=True)
         sys.exit(1)
     
     # Determine output compression
@@ -629,21 +806,30 @@ Note: JPEG ↔ Brunsli conversions use cbrunsli/dbrunsli for lossless conversion
         print("Use --brunsli flag to convert to brunsli-compressed JPEG.")
         sys.exit(1)
     
+    # Handle S3 output - create temp directory for output
+    temp_output_dir = None
+    output_dir = args.output_dir
+    
+    if is_s3_path(args.output_dir):
+        print("Output is S3 path, using temporary local directory...")
+        temp_output_dir = tempfile.mkdtemp(prefix='convert_mrf_output_')
+        output_dir = temp_output_dir
+    
     # Choose conversion method
     try:
         if input_compression == 'PNG' and output_compression == 'JPEG':
             # Use fast VRT-based method for PNG → standard JPEG
             success = convert_png_to_jpeg_standard(
-                args.input_mrf,
-                args.output_dir,
+                input_mrf_path,
+                output_dir,
                 args.quality,
                 args.output_name
             )
         else:
             # Use tile-by-tile method for brunsli conversions and JPEG input
             success = convert_tile_by_tile(
-                args.input_mrf,
-                args.output_dir,
+                input_mrf_path,
+                output_dir,
                 args.temp_dir,
                 args.no_cleanup,
                 input_compression,
@@ -652,12 +838,40 @@ Note: JPEG ↔ Brunsli conversions use cbrunsli/dbrunsli for lossless conversion
                 args.output_name
             )
         
+        # Upload to S3 if output is S3 path
+        if success and is_s3_path(args.output_dir):
+            print("\nUploading converted MRF to S3...")
+            # Find the output MRF file
+            output_basename = args.output_name if args.output_name else os.path.basename(input_mrf_path)
+            if not output_basename.endswith('.mrf'):
+                output_basename += '.mrf'
+            local_output_mrf = os.path.join(output_dir, output_basename)
+            
+            try:
+                upload_mrf_to_s3(local_output_mrf, args.output_dir, s3_client)
+            except Exception as e:
+                print(f"Error uploading to S3: {e}")
+                success = False
+        
+        # Clean up temp directories
+        if temp_input_dir:
+            shutil.rmtree(temp_input_dir, ignore_errors=True)
+        if temp_output_dir:
+            shutil.rmtree(temp_output_dir, ignore_errors=True)
+        
         sys.exit(0 if success else 1)
         
     except Exception as e:
         print(f"\nERROR: {e}")
         import traceback
         traceback.print_exc()
+        
+        # Clean up temp directories
+        if temp_input_dir:
+            shutil.rmtree(temp_input_dir, ignore_errors=True)
+        if temp_output_dir:
+            shutil.rmtree(temp_output_dir, ignore_errors=True)
+        
         sys.exit(1)
 
 

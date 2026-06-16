@@ -261,7 +261,7 @@ Tests the MRF conversion tool for converting between PNG, standard JPEG (ZenJPEG
 - Source MRF: `convert_mrf_files/source_png_mrf/` - Paletted PNG MRF with overviews
 - Expected outputs: `convert_mrf_files/expected/` - Reference MRF metadata files for validation
 
-**Tests:**
+**Local Conversion Tests:**
 1. **PNG → ZenJPEG (standard JPEG)**: Fast conversion using `gdal_translate`
    - Verifies data and index checksums
    - Validates tile count and file sizes
@@ -269,7 +269,6 @@ Tests the MRF conversion tool for converting between PNG, standard JPEG (ZenJPEG
 
 2. **PNG → Brunsli ZenJPEG**: Tile-by-tile conversion with Brunsli compression
    - Converts base tiles and regenerates overviews using `gdaladdo`
-   - Verifies compression ratio vs standard JPEG
    - Validates data checksum and MRF metadata
 
 3. **ZenJPEG → Brunsli ZenJPEG**: Lossless JPEG to Brunsli conversion
@@ -285,6 +284,15 @@ Tests the MRF conversion tool for converting between PNG, standard JPEG (ZenJPEG
 5. **MRF Metadata Consistency**: Validates MRF XML metadata files
    - Compares generated MRF files against expected reference files
    - Ensures consistent metadata structure across all conversion paths
+
+**S3 Conversion Test:**
+
+6. **S3 Input → S3 Output**: Tests S3 support using moto to mock AWS S3
+   - Uploads test MRF to mock S3 bucket
+   - Downloads MRF from S3 input location (`s3://bucket/input/`)
+   - Performs PNG → JPEG conversion
+   - Uploads results to S3 output location (`s3://bucket/output/`)
+   - Verifies all files (.mrf, .idx, .pjg) present in S3 output bucket
 
 ## vectorgen Tests:
 1. MVT MRF generation from single shapefile

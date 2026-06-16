@@ -397,8 +397,8 @@ convert_mrf.py is a tool for converting MRFs between different compression forma
 Usage: convert_mrf.py <input_mrf> <output_dir> [options]
 
 Positional arguments:
-  input_mrf             Path to input MRF file
-  output_dir            Output directory for converted MRF
+  input_mrf             Path to input MRF file (local path or s3://bucket/key)
+  output_dir            Output directory for converted MRF (local path or s3://bucket/key)
 
 Options:
   -h, --help            show this help message and exit
@@ -414,6 +414,8 @@ Options:
                         Custom output MRF filename (optional, defaults to
                         input filename)
 ```
+
+**S3 Support**: Both input and output paths can be S3 URIs in the format `s3://bucket-name/key/path`. The script will automatically download from S3 when the input is an S3 path and upload to S3 when the output is an S3 path. AWS credentials must be configured (via environment variables, AWS credentials file, or IAM role).
 
 ### Examples
 
@@ -442,10 +444,27 @@ Custom JPEG quality and output filename:
 python3 convert_mrf.py input.mrf output_dir/ --quality 90 --output-name custom_name.mrf
 ```
 
+Convert from S3 to S3:
+```Shell
+python3 convert_mrf.py s3://my-bucket/input/layer.mrf s3://my-bucket/output/
+```
+
+Convert from S3 to local:
+```Shell
+python3 convert_mrf.py s3://my-bucket/input/layer.mrf /local/output/
+```
+
+Convert from local to S3:
+```Shell
+python3 convert_mrf.py /local/input/layer.mrf s3://my-bucket/output/
+```
+
 ### Notes
 
 * Overviews are preserved in all conversions
 * For PNG → Brunsli, overviews are regenerated; for JPEG → Brunsli, existing overviews are converted
+* S3 operations require AWS credentials to be configured (environment variables, credentials file, or IAM role)
+* When using S3 paths, the script automatically handles downloading input files and uploading output files
 
 ## Contact
 

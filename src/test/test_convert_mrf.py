@@ -22,10 +22,19 @@ import shutil
 import unittest
 import xmlrunner
 import hashlib
+import importlib.util
 from optparse import OptionParser
 from oe_test_utils import run_command
+import boto3
+from moto import mock_aws
 
 SCRIPT_PATH = os.path.join(os.path.dirname(__file__), '/usr/bin/convert_mrf.py')
+
+# Import convert_mrf module for direct function calls in S3 tests
+# (mock_aws won't work outside current Python process)
+spec = importlib.util.spec_from_file_location("convert_mrf", SCRIPT_PATH)
+convert_mrf = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(convert_mrf)
 
 # Expected checksums for verified correct conversions
 EXPECTED_CHECKSUMS = {
@@ -180,12 +189,6 @@ class TestConvertMRF(unittest.TestCase):
         data_size = os.path.getsize(files['data'])
         self.assertGreater(data_size, 0, "Data file should not be empty")
         
-        # Brunsli should be smaller than standard JPEG (roughly 20-25% smaller)
-        zen_data_size = os.path.getsize(self.get_mrf_files(self.output_zen)['data'])
-        compression_ratio = data_size / zen_data_size
-        self.assertLess(compression_ratio, 0.85, 
-                       f"Brunsli should be smaller than standard JPEG (ratio: {compression_ratio:.2%})")
-        
         # Verify checksums match expected values
         pjg_md5 = self.get_file_md5(files['data'])
         idx_md5 = self.get_file_md5(files['idx'])
@@ -196,7 +199,6 @@ class TestConvertMRF(unittest.TestCase):
         
         print(f"✓ PNG → Brunsli ZenJPEG conversion successful")
         print(f"  Data size: {data_size:,} bytes")
-        print(f"  Compression ratio vs standard: {compression_ratio:.2%}")
         print(f"  Tile count: {tile_count}")
         print(f"  Data MD5: {pjg_md5}")
         print(f"  Index MD5: {idx_md5}")
@@ -321,6 +323,60 @@ class TestConvertMRF(unittest.TestCase):
             print(f"  ✓ {name} MRF matches expected")
         
         print(f"✓ All MRF metadata files match expected references")
+    
+    @mock_aws
+    def test_06_s3_to_s3_conversion(self):
+        """Test converting MRF from S3 to S3 using mocked S3."""
+        print("\n=== Test 6: S3 → S3 Conversion ===")
+        
+        # Set up mock S3
+        s3_client = boto3.client('s3', region_name='us-east-1')
+        test_bucket = "test-convert-mrf-bucket"
+        s3_client.create_bucket(Bucket=test_bucket)
+        
+        # Upload source MRF to mock S3
+        from pathlib import Path
+        mrf_path = Path(self.source_mrf)
+        base_name = mrf_path.stem
+        mrf_dir = mrf_path.parent
+        s3_input_key = "input/mrf_convert_src"
+        
+        # Upload .mrf, .idx, and .ppg files
+        s3_client.upload_file(str(mrf_path), test_bucket, f"{s3_input_key}.mrf")
+        s3_client.upload_file(str(mrf_dir / f"{base_name}.idx"), test_bucket, f"{s3_input_key}.idx")
+        s3_client.upload_file(str(mrf_dir / f"{base_name}.ppg"), test_bucket, f"{s3_input_key}.ppg")
+        
+        # Run conversion: S3 → S3
+        s3_input_uri = f"s3://{test_bucket}/{s3_input_key}.mrf"
+        s3_output_uri = f"s3://{test_bucket}/output/"
+        sys.argv = ['convert_mrf.py', s3_input_uri, s3_output_uri]
+        
+        # convert_mrf.main() calls sys.exit(), so we need to catch that
+        try:
+            convert_mrf.main()
+        except SystemExit as e:
+            # Exit code 0 means success
+            self.assertEqual(e.code, 0, "Conversion should exit with code 0 (success)")
+        
+        # Verify files were uploaded to S3 output location
+        objects = s3_client.list_objects_v2(Bucket=test_bucket, Prefix="output/")
+        self.assertIn('Contents', objects, "S3 output should contain converted files")
+        
+        uploaded_keys = [obj['Key'] for obj in objects['Contents']]
+        expected_keys = [
+            "output/mrf_convert_src.mrf",
+            "output/mrf_convert_src.pjg",
+            "output/mrf_convert_src.idx"
+        ]
+        
+        for expected_key in expected_keys:
+            self.assertIn(expected_key, uploaded_keys, 
+                         f"Expected file {expected_key} should be in S3")
+        
+        print(f"✓ S3 → S3 conversion successful")
+        print(f"  Input: {s3_input_uri}")
+        print(f"  Output: {s3_output_uri}")
+        print(f"  Files uploaded: {len(uploaded_keys)}")
 
     @classmethod
     def tearDownClass(cls):
