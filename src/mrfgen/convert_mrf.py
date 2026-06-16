@@ -267,6 +267,49 @@ def detect_compression(mrf_path):
     raise ValueError(f"Unknown MRF format: no .pjg or .ppg file found")
 
 
+def apply_alpha_mask_to_grayscale(input_path, output_path):
+    """
+    Apply alpha mask to grayscale+alpha image.
+    
+    Handles the Zen mask limitation where value=0 means transparent:
+    - If alpha=0 (transparent): set to 0 (for Zen mask)
+    - If alpha>0 and gray=0 (black opaque): set to 1 (visually black but not transparent)
+    - Otherwise: keep original grayscale value
+    
+    Args:
+        input_path: Path to input image with 2 bands (grayscale + alpha)
+        output_path: Path to output single-band grayscale GTiff
+    """
+    import numpy as np
+    from osgeo import gdal
+    
+    src_ds = gdal.Open(input_path)
+    gray_band = src_ds.GetRasterBand(1).ReadAsArray()
+    alpha_band = src_ds.GetRasterBand(2).ReadAsArray()
+    
+    # Apply alpha mask with black opaque pixel handling
+    result = np.where(alpha_band == 0, 0, 
+                     np.where(gray_band == 0, 1, gray_band))
+    
+    # Write result to output file
+    driver = gdal.GetDriverByName('GTiff')
+    x_size = src_ds.RasterXSize
+    y_size = src_ds.RasterYSize
+    out_ds = driver.Create(output_path, x_size, y_size, 1, gdal.GDT_Byte)
+    
+    if src_ds.GetGeoTransform():
+        out_ds.SetGeoTransform(src_ds.GetGeoTransform())
+    if src_ds.GetProjection():
+        out_ds.SetProjection(src_ds.GetProjection())
+    
+    out_ds.GetRasterBand(1).WriteArray(result)
+    out_ds.FlushCache()
+    
+    # Close the files
+    out_ds = None
+    src_ds = None
+
+
 def convert_png_to_jpeg_standard(input_mrf, output_dir, quality=DEFAULT_JPEG_QUALITY, output_name=None):
     """
     Convert PNG MRF to standard JPEG/ZenJPEG using GDAL tools (fast bulk conversion).
@@ -309,6 +352,15 @@ def convert_png_to_jpeg_standard(input_mrf, output_dir, quality=DEFAULT_JPEG_QUA
     if source_overviews:
         print(f"  Source overviews: {source_overviews}")
     
+    # Check if source is paletted (1 band with colorInterpretation = Palette)
+    is_paletted = (len(bands) == 1 and 
+                   bands[0].get('colorInterpretation') == 'Palette')
+    
+    # Check if source is grayscale with alpha (2 bands: Gray + Alpha)
+    is_grayscale_alpha = (len(bands) == 2 and 
+                          bands[0].get('colorInterpretation') == 'Gray' and
+                          bands[1].get('colorInterpretation') == 'Alpha')
+    
     output_basename = output_name if output_name else input_mrf_path.name
     if not output_basename.endswith('.mrf'):
         output_basename += '.mrf'
@@ -318,9 +370,20 @@ def convert_png_to_jpeg_standard(input_mrf, output_dir, quality=DEFAULT_JPEG_QUA
     print("\nStep 2/4: Creating VRT from source PNG MRF...")
     vrt_path = output_mrf.replace('.mrf', '_source.vrt')
     
-    vrt_cmd = ['gdalbuildvrt', vrt_path, input_mrf]
-    run_command(vrt_cmd)
-    print(f"  VRT created: {vrt_path}")
+    if is_grayscale_alpha:
+        # For grayscale+alpha, apply alpha mask preprocessing
+        print(f"  Applying alpha mask (transparent→0, black opaque→1)...")
+        temp_tif = output_mrf.replace('.mrf', '_temp.tif')
+        apply_alpha_mask_to_grayscale(input_mrf, temp_tif)
+        
+        # Create VRT from the temp file
+        vrt_cmd = ['gdalbuildvrt', vrt_path, temp_tif]
+        run_command(vrt_cmd)
+        print(f"  VRT created: {vrt_path}")
+    else:
+        vrt_cmd = ['gdalbuildvrt', vrt_path, input_mrf]
+        run_command(vrt_cmd)
+        print(f"  VRT created: {vrt_path}")
     
     # Convert VRT to JPEG MRF
     print("\nStep 3/4: Converting to ZenJPEG MRF...")
@@ -333,14 +396,15 @@ def convert_png_to_jpeg_standard(input_mrf, output_dir, quality=DEFAULT_JPEG_QUA
         '-co', 'OPTIONS=JFIF:on'
     ]
     
-    # Check if source is paletted (1 band with colorInterpretation = Palette)
-    is_paletted = (len(bands) == 1 and 
-                   bands[0].get('colorInterpretation') == 'Palette')
-    
     if is_paletted:
         # For paletted images, use -expand rgb to convert to 3-band RGB
         gdal_cmd.extend(['-expand', 'rgb'])
         print(f"  Expanding paletted image to RGB")
+    elif is_grayscale_alpha:
+        # For grayscale+alpha, we've already applied alpha to create single-band grayscale
+        # with transparent pixels set to black (0) - just use band 1
+        gdal_cmd.extend(['-b', '1'])
+        print(f"  Converting to 1-band JPEG (Zen mask for zero/transparent pixels)")
     else:
         # For non-paletted, select bands (up to 3 for RGB JPEG)
         for i in range(1, min(4, len(bands) + 1)):
@@ -366,9 +430,13 @@ def convert_png_to_jpeg_standard(input_mrf, output_dir, quality=DEFAULT_JPEG_QUA
     else:
         print("  Source MRF has no overviews - skipping overview creation")
     
-    # Clean up VRT
+    # Clean up VRT and temp files
     try:
         os.remove(vrt_path)
+        if is_grayscale_alpha:
+            temp_tif = output_mrf.replace('.mrf', '_temp.tif')
+            if os.path.exists(temp_tif):
+                os.remove(temp_tif)
     except:
         pass
     
@@ -455,10 +523,18 @@ def convert_tile_by_tile(input_mrf_path, output_dir, temp_dir_base, no_cleanup, 
         # Create/modify output MRF metadata
         print("\n2/6: Creating MRF metadata...")
         
+        # Check if source is grayscale with alpha (2 bands: Gray + Alpha)
+        is_grayscale_alpha = (num_bands == 2 and 
+                              bands[0].get('colorInterpretation') == 'Gray' and
+                              bands[1].get('colorInterpretation') == 'Alpha')
+        
+        # Set output channels: 1 for grayscale+alpha (Zen mask), 3 for RGB
+        output_channels = 1 if is_grayscale_alpha else 3
+        
         mrf_output_content = f"""<MRF_META>
   <Raster>
-    <Size x="{size_x}" y="{size_y}" c="3" />
-    <PageSize x="{blocksize}" y="{blocksize}" c="3" />
+    <Size x="{size_x}" y="{size_y}" c="{output_channels}" />
+    <PageSize x="{blocksize}" y="{blocksize}" c="{output_channels}" />
     <Compression>JPEG</Compression>
     <Quality>{quality}</Quality>
   </Raster>"""
@@ -600,19 +676,34 @@ def convert_tile_by_tile(input_mrf_path, output_dir, temp_dir_base, no_cleanup, 
                     ]
                     run_command(extract_cmd, quiet=True)
                     
+                    # Check if source is paletted
+                    is_paletted = (num_bands == 1 and 
+                                   bands[0].get('colorInterpretation') == 'Palette')
+                    
+                    # Check if source is grayscale with alpha
+                    is_grayscale_alpha_tile = (num_bands == 2 and 
+                                               bands[0].get('colorInterpretation') == 'Gray' and
+                                               bands[1].get('colorInterpretation') == 'Alpha')
+                    
+                    # For grayscale+alpha, apply alpha mask preprocessing
+                    if is_grayscale_alpha_tile:
+                        tile_processed = os.path.join(temp_dir, f"tile_processed.tif")
+                        apply_alpha_mask_to_grayscale(tile_png, tile_processed)
+                        # Use processed tile for conversion
+                        tile_png = tile_processed
+                    
                     # Convert to JPEG MRF
                     tile_mrf = os.path.join(temp_dir, f"tile.mrf")
                     convert_cmd = [
                         'gdal_translate', '-q'
                     ] + gdal_config
                     
-                    # Check if source is paletted
-                    is_paletted = (num_bands == 1 and 
-                                   bands[0].get('colorInterpretation') == 'Palette')
-                    
                     if is_paletted:
                         # For paletted images, use -expand rgb to convert to 3-band RGB
                         convert_cmd.extend(['-expand', 'rgb'])
+                    elif is_grayscale_alpha_tile:
+                        # For grayscale+alpha, we've already applied alpha - just use band 1
+                        convert_cmd.extend(['-b', '1'])
                     else:
                         # For non-paletted, add band selection (up to 3 bands for RGB JPEG)
                         for i in range(1, min(4, num_bands + 1)):
