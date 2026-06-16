@@ -77,6 +77,7 @@ RUN git clone --depth=1 https://github.com/google/brunsli.git && \
     cd out && make && make install && \
     cp /tmp/brunsli/out/artifacts/cbrunsli /usr/local/bin/ && \
     cp /tmp/brunsli/out/artifacts/dbrunsli /usr/local/bin/ && \
+    export LD_LIBRARY_PATH=:/usr/local/lib && \
     ldconfig && \
     cd /tmp/ && rm -rf /tmp/brunsli
 
