@@ -402,15 +402,16 @@ Positional arguments:
 
 Options:
   -h, --help            show this help message and exit
-  --quality QUALITY     JPEG quality for PNG→JPEG conversion (default: 80,
+  -q, --quality QUALITY JPEG quality for PNG→JPEG conversion (default: 80,
                         ignored for JPEG input)
-  --brunsli             Output brunsli-compressed JPEG (omit for standard
+  -b, --brunsli         Output brunsli-compressed JPEG (omit for standard
                         JPEG)
-  --temp-dir TEMP_DIR   Temporary directory for intermediate files
-  --no-cleanup          Don't delete temporary files after conversion
-  --sigevent-url SIGEVENT_URL
+  -t, --temp-dir TEMP_DIR
+                        Temporary directory for intermediate files
+  -n, --no-cleanup      Don't delete temporary files after conversion
+  -s, --sigevent-url SIGEVENT_URL
                         URL for sigevent monitoring (optional)
-  --output-name OUTPUT_NAME
+  -o, --output-name OUTPUT_NAME
                         Custom output MRF filename (optional, defaults to
                         input filename)
 ```
@@ -427,6 +428,8 @@ python3 convert_mrf.py png_input.mrf output_dir/
 Convert PNG to Brunsli-compressed JPEG:
 ```Shell
 python3 convert_mrf.py png_input.mrf output_dir/ --brunsli
+# Or using short option:
+python3 convert_mrf.py png_input.mrf output_dir/ -b
 ```
 
 Convert JPEG to Brunsli (lossless):
@@ -442,6 +445,8 @@ python3 convert_mrf.py brunsli_input.mrf output_dir/
 Custom JPEG quality and output filename:
 ```Shell
 python3 convert_mrf.py input.mrf output_dir/ --quality 90 --output-name custom_name.mrf
+# Or using short options:
+python3 convert_mrf.py input.mrf output_dir/ -q 90 -o custom_name.mrf
 ```
 
 Convert from S3 to S3:

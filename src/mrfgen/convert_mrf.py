@@ -818,17 +818,17 @@ S3 paths must be in the format: s3://bucket-name/key/path
     
     parser.add_argument("input_mrf", help="Path to input MRF file (local path or s3://bucket/key)")
     parser.add_argument("output_dir", help="Output directory for converted MRF (local path or s3://bucket/key)")
-    parser.add_argument("--quality", type=int, default=DEFAULT_JPEG_QUALITY,
+    parser.add_argument("-q", "--quality", type=int, default=DEFAULT_JPEG_QUALITY,
                        help=f"JPEG quality for PNG→JPEG conversion (default: {DEFAULT_JPEG_QUALITY}, ignored for JPEG input)")
-    parser.add_argument("--brunsli", action="store_true",
+    parser.add_argument("-b", "--brunsli", action="store_true",
                        help="Output brunsli-compressed JPEG (omit for standard JPEG)")
-    parser.add_argument("--temp-dir", default=os.environ.get('TMPDIR', '/tmp'),
+    parser.add_argument("-t", "--temp-dir", default=os.environ.get('TMPDIR', '/tmp'),
                        help="Temporary directory for intermediate files")
-    parser.add_argument("--no-cleanup", action="store_true",
+    parser.add_argument("-n", "--no-cleanup", action="store_true",
                        help="Don't delete temporary files after conversion")
-    parser.add_argument("--sigevent-url", dest="sigevent_url",
+    parser.add_argument("-s", "--sigevent-url", dest="sigevent_url",
                        help="URL for sigevent monitoring (optional)")
-    parser.add_argument("--output-name", dest="output_name",
+    parser.add_argument("-o", "--output-name", dest="output_name",
                        help="Custom output MRF filename (optional, defaults to input filename)")
     
     args = parser.parse_args()
