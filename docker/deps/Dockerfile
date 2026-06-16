@@ -24,7 +24,7 @@ RUN dnf -y update && \
         libcurl-devel-8.12.1 \
         libjpeg-turbo-devel-3.0.2 \
         libxml2-devel-2.12.5 \
-        mod_ssl-1:2.4.63 \
+        mod_ssl-1:2.4.63-13.el10_2.1 \
         openssl-devel-1:3.5.5 \
         luarocks-3.9.2 \
         valkey-compat-redis-8.0.7 \
@@ -40,13 +40,13 @@ RUN echo 'will cite' | parallel --citation || true
 
 # Install supercronic
 WORKDIR /tmp
-RUN wget https://go.dev/dl/go1.26.3.linux-amd64.tar.gz && \
-    tar xf go1.26.3.linux-amd64.tar.gz && \
+RUN wget https://go.dev/dl/go1.26.4.linux-amd64.tar.gz && \
+    tar xf go1.26.4.linux-amd64.tar.gz && \
     mv go /usr/local/ && \
     ln -s /usr/local/go/bin/go /usr/local/bin/go && \
-    wget https://github.com/aptible/supercronic/archive/refs/tags/v0.2.45.tar.gz && \
-    tar xf v0.2.45.tar.gz && \
-    cd supercronic-0.2.45 && \
+    wget https://github.com/aptible/supercronic/archive/refs/tags/v0.2.46.tar.gz && \
+    tar xf v0.2.46.tar.gz && \
+    cd supercronic-0.2.46 && \
     sed -i 's/386 arm arm64//g' build.sh && \
     go mod tidy && \
     go mod vendor && \
@@ -85,7 +85,12 @@ RUN dnf install -y yum-utils-4.7.0 rpm-build-4.19.1.1 && \
     dnf clean all && \
     yumdownloader --source httpd-2.4.63-13.el10_2.1.x86_64 && \
     HOME="/tmp" rpm -ivh httpd-*.src.rpm && \
-    yum-builddep -y httpd-2.4.63-13.el10_2.1.x86_64
+    # SECURITY FIX (REVERT LATER): Override Release field in httpd.spec to force build dependencies
+    # to use patched version 13.el10_2.1 instead of vulnerable 13.el10.1
+    # Addresses vulnerable packages: httpd, httpd-core, httpd-devel, httpd-filesystem,
+    # httpd-manual, httpd-tools, mod_lua, mod_ssl (all 13.el10.1 -> 13.el10_2.1)
+    sed -i 's/Release: 13%{?dist}/Release: 13.el10_2.1/g' /tmp/rpmbuild/SPECS/httpd.spec && \
+    yum-builddep -y /tmp/rpmbuild/SPECS/httpd.spec
 
 # Copy OnEarth to home directory
 RUN mkdir -p /home/oe2
