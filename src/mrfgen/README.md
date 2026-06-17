@@ -387,9 +387,10 @@ convert_mrf.py is a tool for converting MRFs between different compression forma
 ### Conversion Methods
 
 1. **Standard method**: Fast bulk conversion using `gdal_translate` (PNG → standard JPEG only)
-2. **Tile-by-tile method**: Extracts and converts tiles individually
+2. **Tile-by-tile method**: Extracts and converts tiles individually with parallel processing
    - Required for: Brunsli output, Brunsli input, or JPEG input
    - Uses `cbrunsli`/`dbrunsli` for lossless JPEG ↔ Brunsli conversions
+   - Processes tiles concurrently across multiple CPU cores (configurable with `--workers`)
 
 ### Usage
 
@@ -406,6 +407,8 @@ Options:
                         ignored for JPEG input)
   -b, --brunsli         Output brunsli-compressed JPEG (omit for standard
                         JPEG)
+  -w, --workers WORKERS Number of parallel workers for tile-by-tile processing
+                        (default: CPU count, only used for Brunsli conversions)
   -t, --temp-dir TEMP_DIR
                         Temporary directory for intermediate files
   -n, --no-cleanup      Don't delete temporary files after conversion
@@ -432,9 +435,11 @@ python3 convert_mrf.py png_input.mrf output_dir/ --brunsli
 python3 convert_mrf.py png_input.mrf output_dir/ -b
 ```
 
-Convert JPEG to Brunsli (lossless):
+Convert JPEG to Brunsli with 8 parallel workers (lossless):
 ```Shell
-python3 convert_mrf.py jpeg_input.mrf output_dir/ --brunsli
+python3 convert_mrf.py jpeg_input.mrf output_dir/ --brunsli --workers 8
+# Or using short options:
+python3 convert_mrf.py jpeg_input.mrf output_dir/ -b -w 8
 ```
 
 Convert Brunsli back to JPEG (lossless):
