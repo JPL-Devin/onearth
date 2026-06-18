@@ -203,22 +203,32 @@ Each test script will output a JUnit XML results file. By default, these files a
 5. Test `recalculate_best` to recalculate an entire `:best` key
 
 ## mrfgen Tests:
-1. Global geographic PNG-MRF
+1. **Paletted PNG-MRF** (`TestMRFGeneration_paletted`)
 	* Global input image
 	* Geographic projection
 	* Paletted PNG input image
 	* Paletted MRF-PNG output image
-2. Tiled polar north JPEG-MRF
+2. **Paletted PNG-MRF with nearest neighbor** (`TestMRFGeneration_paletted_nnb`)
+	* Same as test 1 but with nearest neighbor resampling
+3. **Non-paletted PNG-MRF** (`TestMRFGeneration_nonpaletted`)
+	* Global input image
+	* Geographic projection
+	* Non-paletted PNG output
+4. **Polar JPEG-MRF** (`TestMRFGeneration_polar`)
 	* Tiled input images
 	* Stereographic Polar North projection
 	* JPEG input images
 	* MRF-JPEG output image
-3. Global web mercator JPEG-MRF
+5. **Polar JPEG-MRF with averaging** (`TestMRFGeneration_polar_avg`)
+	* Same as test 4 but with average resampling
+6. **Web Mercator JPEG-MRF** (`TestMRFGeneration_mercator`)
 	* Global input image in geographic projection
 	* Reprojection to web mercator
-4. Geographic PNG-MRF using granule input files
+	* JPEG output
+7. **Web Mercator JPEG-MRF with averaging** (`TestMRFGeneration_mercator_avg`)
+	* Same as test 6 but with average resampling
+8. **Geographic PNG-MRF using granule input files** (`TestMRFGeneration_granule`)
  	* Granule input images with global coverage
- 	* Input images cross antimeridian
 	* Native geographic projection
 	* Generate initial empty MRF with nocopy option
 	* Insert into existing MRF
@@ -229,17 +239,48 @@ Each test script will output a JUnit XML results file. By default, these files a
 		* Add image to new z-level
 		* Add image to existing z-level
 		* Add image to multiple z-levels
-5. Web Mercator PNG-MRF using granule input files
+9. **Web Mercator PNG-MRF using granule input files** (`TestMRFGeneration_granule_webmerc`)
 	* Granule input images with partial coverage
 	* Reprojection to web mercator
 	* No blending of input images
 	* Automatic creation of empty MRF
-6. Tiled geographic JPEG-MRF using tiled input files with z-level and time
+10. **Tiled geographic JPEG-MRF with z-level and time** (`TestMRFGeneration_tiled_z`)
 	* Tiled input images
 	* RGBA TIFF input images
 	* Use single z-level
 	* Use time (hh:mm:ss)
 	* Use zdb lookup
+11. **Non-paletted with colormap** (`TestMRFGeneration_nonpaletted_colormap`)
+	* Non-paletted input with colormap application
+12. **Email notification** (`TestMRFGeneration_email_notification`)
+	* Tests email notification functionality
+13. **Mixed projections** (`TestMRFGeneration_mixed_projections`)
+	* Input images with different projections
+14. **Antimeridian crossing** (`TestMRFGeneration_antimeridian_crossing`)
+	* Input images that cross the antimeridian
+15. **JPNG (JPEG+PNG) MRF** (`TestMRFGeneration_jpng`)
+	* Mixed JPEG and PNG input handling
+16. **ZenJPEG MRF** (`TestMRFGeneration_zenjpeg`)
+	* ZenJPEG compression (JPEG with Zen masking)
+	* RGB+Alpha input
+17. **Brunsli compression enabled** (`TestMRFGeneration_brunsli_on`)
+	* Brunsli-compressed JPEG output
+18. **Brunsli compression disabled** (`TestMRFGeneration_brunsli_off`)
+	* Standard JPEG output (Brunsli explicitly disabled)
+19. **ZenJPEG with Brunsli** (`TestMRFGeneration_zenjpeg_brunsli`)
+	* Combined ZenJPEG and Brunsli compression
+20. **Default nocopy behavior** (`TestMRFGeneration_defaultnocopy`)
+	* Tests default nocopy MRF generation
+21. **Angstrom Exponent layer** (`TestMRFGeneration_Angstrom_Exponent`)
+	* Specific layer type testing
+22. **Background fill** (`TestMRFGeneration_background`)
+	* Tests background fill functionality
+23. **RGBA to Paletted conversion** (`TestRGBA2Pal`)
+	* Converts RGBA to paletted format
+24. **OPERA antimeridian crossing** (`TestMRFGeneration_opera_antimeridian_crossing`)
+	* OPERA-specific antimeridian handling
+25. **ZenJPEG grayscale+alpha** (`TestMRFGeneration_zenjpeg_grayscale_alpha`)
+	* Tests grayscale+alpha (2-band) TIFF input
 
 ## RGB PNG To PAL PNG Tests:
 1. Large image
