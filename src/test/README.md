@@ -5,6 +5,7 @@ This directory contains files and scripts to test various aspects of OnEarth. Th
 
 * `test_colormap2vrt.py` -- tests `colormap2vrt.py`
 * `test_colormap_html_sld.py` -- tests scripts for converting colormaps to HTML and SLD
+* `test_convert_mrf.py` -- tests MRF conversion tool (`convert_mrf.py`)
 * `test_gc_service.py` -- tests the OnEarth GetCapabilities Service
 * `test_generate_empty_tile.py` -- tests empty tile generation with `oe_generate_empty_tile.py`
 * `test_legends.py` -- tests the oe_generate_legend tool with GIBS colormaps
@@ -251,6 +252,57 @@ Each test script will output a JUnit XML results file. By default, these files a
 8. Small image with mismatched transparency
 9. Small image with invalid fill value
 10. GeoTIFF image
+
+## MRF Conversion Tests (`convert_mrf.py`):
+
+Tests the MRF conversion tool for converting between PNG, standard JPEG (ZenJPEG), and Brunsli-compressed JPEG formats.
+
+**Test Data:**
+- Source MRF: `convert_mrf_files/source_png_mrf/` - Paletted PNG MRF with overviews
+- Expected outputs: `convert_mrf_files/expected/` - Reference MRF metadata files for validation
+
+**Local Conversion Tests:**
+1. **PNG → ZenJPEG (standard JPEG)**: Fast conversion using `gdal_translate`
+   - Verifies data and index checksums
+   - Validates tile count and file sizes
+   - Checks MRF metadata against expected reference
+
+2. **PNG → Brunsli ZenJPEG**: Tile-by-tile conversion with Brunsli compression
+   - Converts base tiles and regenerates overviews using `gdaladdo`
+   - Validates data checksum and MRF metadata
+
+3. **ZenJPEG → Brunsli ZenJPEG**: Lossless JPEG to Brunsli conversion
+   - Converts all tiles including existing overviews
+   - Verifies output matches PNG→Brunsli data size
+   - Validates data checksum (should match Test 2)
+   - Note: Index checksum differs from Test 2 due to different overview handling
+
+4. **Brunsli ZenJPEG → ZenJPEG (round-trip)**: Lossless Brunsli to JPEG decompression
+   - Verifies round-trip produces identical output to original ZenJPEG
+   - Validates both data and index checksums match Test 1
+
+5. **MRF Metadata Consistency**: Validates MRF XML metadata files
+   - Compares generated MRF files against expected reference files
+   - Ensures consistent metadata structure across all conversion paths
+
+**Unit Tests:**
+
+6. **apply_alpha_mask_to_grayscale**: Tests the helper function for grayscale+alpha PNG handling
+   - Creates synthetic 10×10 test data with transparent pixels, black opaque pixels, and normal pixels
+   - Verifies transparent pixels (alpha=0) become 0 for Zen mask
+   - Verifies black opaque pixels (gray=0, alpha>0) become 1 (visually black but not transparent)
+   - Verifies normal pixels (gray>0, alpha>0) keep their original values
+   - Validates single-band output and proper file handling
+   - Tests the Zen mask workaround where value=0 means transparent
+
+**S3 Conversion Test:**
+
+7. **S3 Input → S3 Output**: Tests S3 support using moto to mock AWS S3
+   - Uploads test MRF to mock S3 bucket
+   - Downloads MRF from S3 input location (`s3://bucket/input/`)
+   - Performs PNG → JPEG conversion
+   - Uploads results to S3 output location (`s3://bucket/output/`)
+   - Verifies all files (.mrf, .idx, .pjg) present in S3 output bucket
 
 ## vectorgen Tests:
 1. MVT MRF generation from single shapefile

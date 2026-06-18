@@ -373,6 +373,109 @@ Options:
                         INFO.  Default: ERROR
 ```
 
+## convert_mrf.py
+
+convert_mrf.py is a tool for converting MRFs between different compression formats. It supports conversions between PNG, standard JPEG (ZenJPEG), and Brunsli-compressed JPEG formats.
+
+### Supported Conversions
+
+* **PNG → JPEG (standard/ZenJPEG)**: Fast conversion using GDAL tools with automatic palette expansion (if necessary)
+* **PNG → Brunsli JPEG**: Tile-by-tile conversion with Brunsli compression (~22% smaller than standard JPEG)
+* **JPEG → Brunsli**: Lossless compression of existing JPEG tiles
+* **Brunsli → JPEG**: Lossless decompression back to standard JPEG
+
+### Conversion Methods
+
+1. **Standard method**: Fast bulk conversion using `gdal_translate` (PNG → standard JPEG only)
+2. **Tile-by-tile method**: Extracts and converts tiles individually with parallel processing
+   - Required for: Brunsli output, Brunsli input, or JPEG input
+   - Uses `cbrunsli`/`dbrunsli` for lossless JPEG ↔ Brunsli conversions
+   - Processes tiles concurrently across multiple CPU cores (configurable with `--workers`)
+
+### Usage
+
+```Shell
+Usage: convert_mrf.py <input_mrf> <output_dir> [options]
+
+Positional arguments:
+  input_mrf             Path to input MRF file (local path or s3://bucket/key)
+  output_dir            Output directory for converted MRF (local path or s3://bucket/key)
+
+Options:
+  -h, --help            show this help message and exit
+  -q, --quality QUALITY JPEG quality for PNG→JPEG conversion (default: 80,
+                        ignored for JPEG input)
+  -b, --brunsli         Output brunsli-compressed JPEG (omit for standard
+                        JPEG)
+  -w, --workers WORKERS Number of parallel workers for tile-by-tile processing
+                        (default: CPU count, only used for Brunsli conversions)
+  -t, --temp-dir TEMP_DIR
+                        Temporary directory for intermediate files
+  -n, --no-cleanup      Don't delete temporary files after conversion
+  -s, --sigevent-url SIGEVENT_URL
+                        URL for sigevent monitoring (optional)
+  -o, --output-name OUTPUT_NAME
+                        Custom output MRF filename (optional, defaults to
+                        input filename)
+```
+
+**S3 Support**: Both input and output paths can be S3 URIs in the format `s3://bucket-name/key/path`. The script will automatically download from S3 when the input is an S3 path and upload to S3 when the output is an S3 path. AWS credentials must be configured (via environment variables, AWS credentials file, or IAM role).
+
+### Examples
+
+Convert PNG to standard JPEG (fastest):
+```Shell
+python3 convert_mrf.py png_input.mrf output_dir/
+```
+
+Convert PNG to Brunsli-compressed JPEG:
+```Shell
+python3 convert_mrf.py png_input.mrf output_dir/ --brunsli
+# Or using short option:
+python3 convert_mrf.py png_input.mrf output_dir/ -b
+```
+
+Convert JPEG to Brunsli with 8 parallel workers (lossless):
+```Shell
+python3 convert_mrf.py jpeg_input.mrf output_dir/ --brunsli --workers 8
+# Or using short options:
+python3 convert_mrf.py jpeg_input.mrf output_dir/ -b -w 8
+```
+
+Convert Brunsli back to JPEG (lossless):
+```Shell
+python3 convert_mrf.py brunsli_input.mrf output_dir/
+```
+
+Custom JPEG quality and output filename:
+```Shell
+python3 convert_mrf.py input.mrf output_dir/ --quality 90 --output-name custom_name.mrf
+# Or using short options:
+python3 convert_mrf.py input.mrf output_dir/ -q 90 -o custom_name.mrf
+```
+
+Convert from S3 to S3:
+```Shell
+python3 convert_mrf.py s3://my-bucket/input/layer.mrf s3://my-bucket/output/
+```
+
+Convert from S3 to local:
+```Shell
+python3 convert_mrf.py s3://my-bucket/input/layer.mrf /local/output/
+```
+
+Convert from local to S3:
+```Shell
+python3 convert_mrf.py /local/input/layer.mrf s3://my-bucket/output/
+```
+
+### Notes
+
+* Overviews are preserved in all conversions
+* For PNG → Brunsli, overviews are regenerated; for JPEG → Brunsli, existing overviews are converted
+* S3 operations require AWS credentials to be configured (environment variables, credentials file, or IAM role)
+* When using S3 paths, the script automatically handles downloading input files and uploading output files
+
 ## Contact
 
 Contact us by sending an email to

@@ -177,8 +177,7 @@ RUN gcc -O3 RGBApng2Palpng.c -o RGBApng2Palpng -lpng
 # pip updates
 RUN python3 -m pip install --user cython==3.1.2
 RUN python3 setup.py build_ext --inplace
-#Removed Shapely as it is already installed
-RUN python3 -m pip install moto[server]==4.2.7 werkzeug==3.0.1
+RUN python3 -m pip install moto[server]==5.2.2 werkzeug==3.0.1
 
 # Install OnEarth utilties, etc.
 WORKDIR /home/oe2/onearth/
@@ -193,6 +192,7 @@ RUN install -m 755 src/empty_tile/oe_generate_empty_tile.py -D /usr/bin/oe_gener
     install -m 755 src/mrfgen/overtiffpacker.py -D /usr/bin/overtiffpacker.py && \
     install -m 755 src/mrfgen/RGBApng2Palpng -D /usr/bin/RGBApng2Palpng && \
     install -m 755 src/mrfgen/oe_validate_palette.py -D /usr/bin/oe_validate_palette.py && \
+    install -m 755 src/mrfgen/convert_mrf.py -D /usr/bin/convert_mrf.py && \
     install -m 755 src/scripts/oe_utils.py -D /usr/bin/oe_utils.py && \
     install -m 755 src/scripts/twmsbox2wmts.py -D /usr/bin/twmsbox2wmts.py && \
     install -m 755 src/scripts/wmts2twmsbox.py -D /usr/bin/wmts2twmsbox.py && \

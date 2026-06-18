@@ -88,6 +88,20 @@ RUN git clone --depth 1 --branch v${MRF_VERSION} https://github.com/nasa-gibs/mr
     cd /tmp/ && \
     rm -rf /tmp/*
 
+# Install brunsli dependency
+WORKDIR /tmp
+RUN git clone --depth=1 https://github.com/google/brunsli.git && \
+    cd brunsli && \
+    git submodule update --init --recursive && \
+    cmake -DCMAKE_PREFIX_PATH=/usr/local/ -DCMAKE_INSTALL_PREFIX=/usr/local/ -DCMAKE_INSTALL_LIBDIR=lib -DCMAKE_BUILD_TYPE=Release -B out && \
+    cmake --build out --config Release && \
+    cd out && make && make install && \
+    cp /tmp/brunsli/out/artifacts/cbrunsli /usr/local/bin/ && \
+    cp /tmp/brunsli/out/artifacts/dbrunsli /usr/local/bin/ && \
+    export LD_LIBRARY_PATH=:/usr/local/lib && \
+    ldconfig && \
+    cd /tmp/ && rm -rf /tmp/brunsli
+
 # Copy OnEarth to home directory
 RUN mkdir -p /home/oe2
 WORKDIR /home/oe2
@@ -126,6 +140,7 @@ RUN install -m 755 src/empty_tile/oe_generate_empty_tile.py -D /usr/bin/oe_gener
     install -m 755 src/mrfgen/overtiffpacker.py -D /usr/bin/overtiffpacker.py && \
     install -m 755 src/mrfgen/RGBApng2Palpng -D /usr/bin/RGBApng2Palpng && \
     install -m 755 src/mrfgen/oe_validate_palette.py -D /usr/bin/oe_validate_palette.py && \
+    install -m 755 src/mrfgen/convert_mrf.py -D /usr/bin/convert_mrf.py && \
     install -m 755 src/scripts/oe_utils.py -D /usr/bin/oe_utils.py && \
     install -m 755 src/scripts/twmsbox2wmts.py -D /usr/bin/twmsbox2wmts.py && \
     install -m 755 src/scripts/wmts2twmsbox.py -D /usr/bin/wmts2twmsbox.py && \
