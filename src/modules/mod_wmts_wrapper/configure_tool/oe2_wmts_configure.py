@@ -109,6 +109,7 @@ LAYER_APACHE_CONFIG_TEMPLATE = """<Directory {internal_endpoint}/{layer_id}>
         {mrf_or_convert_configs}     
         WMTSWrapperRole tilematrixset
         WMTSWrapperEnableYearDir {year_dir}
+        WMTSWrapperEnableDayDir {day_dir}
         WMTSWrapperLayerAlias {alias}
         WMTSWrapperMimeType {mime_type}
         {cache_expiration_block}
@@ -477,6 +478,11 @@ def make_layer_config(endpoint_config, layer):
 
     # Parse optional stuff in layer config
     year_dir = layer_config['source_mrf'].get('year_dir', False)
+    # Sub-daily layers may be organized into YYYY/DDD (year/day-of-year)
+    # subdirectories. day_dir implies year_dir, since the path includes the year.
+    day_dir = layer_config['source_mrf'].get('day_dir', False)
+    if day_dir:
+        year_dir = True
     alias = layer_config.get('alias', layer_id)
     empty_tile = layer_config['source_mrf'].get('empty_tile', None)
     best = layer_config.get('best_config', None)
@@ -616,7 +622,8 @@ def make_layer_config(endpoint_config, layer):
         LAYER_APACHE_CONFIG_TEMPLATE,
         [('{internal_endpoint}', internal_endpoint), ('{layer_id}', layer_id),
          ('{time_enabled}', 'Off' if static else 'On'),
-         ('{year_dir}', 'On' if year_dir else 'Off'), ('{alias}', alias),
+         ('{year_dir}', 'On' if year_dir else 'Off'),
+         ('{day_dir}', 'On' if day_dir else 'Off'), ('{alias}', alias),
          ('{tilematrixset}', tilematrixset),
          ('{cache_expiration_block}', cache_expiration_block),
          ('{lerc_handling_block}', lerc_handling_block),
@@ -654,13 +661,16 @@ def make_layer_config(endpoint_config, layer):
             data_path_str += '/'
         if not idx_path.endswith('/'):
             idx_path += '/'
-        # check for year_dir
-        if year_dir:
+        # check for year_dir / day_dir (sub-daily YYYY/DDD layout)
+        if day_dir:
+            data_path_str += '${prefix}/${YYYY}/${DDD}/'
+            idx_path += '${prefix}/${YYYY}/${DDD}/'
+        elif year_dir:
             data_path_str += '${prefix}/${YYYY}/'
             idx_path += '${prefix}/${YYYY}/'
         else:
             data_path_str += '${prefix}/'
-            idx_path += '${prefix}/'      
+            idx_path += '${prefix}/'
         # add filename
         data_path_str += '${filename}'
         data_path_str += MIME_TO_MRF_EXTENSION[mimetype]
