@@ -32,4 +32,4 @@ Daily & Multi-Day
 
 Sub-Daily
 * `/epsg{EPSG_Code}/{Internal_Identifier}/{DataDatetime:YYYY}/{DataDatetime:DDD}/`
-* Example: `/epsg4326/ASTER_L1T_Radiance_Terrain_Corrected_v1_STD/2016/10/ASTER_L1T_Radiance_Terrain_Corrected_v1_STD-2016010123000`
+* Example: `/epsg4326/ASTER_L1T_Radiance_Terrain_Corrected_v1_STD/2016/010/ASTER_L1T_Radiance_Terrain_Corrected_v1_STD-2016010123000`

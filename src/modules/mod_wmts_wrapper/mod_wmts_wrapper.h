@@ -40,6 +40,7 @@ typedef struct {
     const char *mime_type;
     const char *time_lookup_uri;
     int year_dir;
+    int day_dir;
     const char *layer_alias;
     apr_array_header_t *date_service_keys;
     const char *base_path;

@@ -178,6 +178,14 @@ contianed in separate directories by year, set this to 'true'. This will cause
 the OnEarth modules to append the year of the requested tile to the path of the
 IDX and data files when they are accessed. Defaults to 'false'.
 
+`day_dir` (optional) -- For sub-daily dynamic layers, if the data and IDX files
+are organized into year/day-of-year (YYYY/DDD) directories, set this to 'true'.
+This will cause the OnEarth modules to append both the year and the zero-padded
+day-of-year (001-366) of the requested tile to the path of the IDX and data
+files when they are accessed. This keeps the large number of per-timestep files
+in a sub-daily layer spread across a directory per day rather than all in a
+single directory. Implies `year_dir`. Defaults to 'false'.
+
 `bbox` (required for TWMS) -- Bounding box of the source MRF in the projection's
 native units.
 
