@@ -3005,9 +3005,13 @@ if mrf_compression_type.lower() == "zen":
             "-q",
         ]
         
-        # Add band selection based on the actual number of bands
-        for band_num in range(1, num_bands + 1):
-            gdal_translate_command_list.extend(["-b", str(band_num)])
+        # Add band selection for grayscale (1 band) and RGB+Alpha (4 bands)
+        # For grayscale: explicitly select band 1 to ensure single-band JPEG output
+        # For RGB+Alpha: explicitly select bands 1-3 (RGB) and drop alpha band 4
+        if num_bands == 1:
+            gdal_translate_command_list.extend(["-b", "1"])
+        elif num_bands == 4:
+            gdal_translate_command_list.extend(["-b", "1", "-b", "2", "-b", "3"])
         
         gdal_translate_command_list.extend([
             "-of",
