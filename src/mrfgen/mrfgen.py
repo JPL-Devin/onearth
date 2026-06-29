@@ -2945,16 +2945,75 @@ if mrf_compression_type.lower() == "zen":
         tile_basename, tile_extension = os.path.splitext(os.path.basename(tile))
         tile_mrf = os.path.join(working_dir, tile_basename + "_zen.mrf")
 
+        # Detect the number of bands and color interpretation
+        tile_dataset = gdal.Open(tile)
+        if tile_dataset is None:
+            log_sig_err("Failed to open tile for band detection: {0}".format(tile), sigevent_url)
+            continue
+        num_bands = tile_dataset.RasterCount
+        
+        # Check if this is grayscale with alpha (2 bands: Gray + Alpha/Undefined)
+        # Note: Some TIFFs have band 2 as GCI_Undefined (0) instead of GCI_AlphaBand (6)
+        is_grayscale_alpha = False
+        if num_bands == 2:
+            band1_interp = tile_dataset.GetRasterBand(1).GetColorInterpretation()
+            band2_interp = tile_dataset.GetRasterBand(2).GetColorInterpretation()
+            is_grayscale_alpha = (band1_interp == gdal.GCI_GrayIndex and 
+                                 (band2_interp == gdal.GCI_AlphaBand or band2_interp == gdal.GCI_Undefined))
+        
+        tile_dataset = None
+        
+        # For grayscale+alpha, apply alpha mask to create single-band grayscale with Zen masking
+        input_tile = tile
+        if is_grayscale_alpha:
+            import numpy as np
+            log_info_mssg("Applying alpha mask for Zen JPEG (grayscale+alpha -> single-band)")
+            
+            # Create temporary single-band grayscale with alpha applied
+            temp_tile = os.path.join(working_dir, tile_basename + "_zen_masked.tif")
+            
+            src_ds = gdal.Open(tile)
+            gray_band = src_ds.GetRasterBand(1).ReadAsArray()
+            alpha_band = src_ds.GetRasterBand(2).ReadAsArray()
+            
+            # Apply alpha mask: transparent pixels (alpha=0) -> 0, black opaque (gray=0, alpha=255) -> 1
+            result = np.where(alpha_band == 0, 0, 
+                             np.where(gray_band == 0, 1, gray_band))
+            
+            # Write single-band result
+            driver = gdal.GetDriverByName('GTiff')
+            x_size = src_ds.RasterXSize
+            y_size = src_ds.RasterYSize
+            out_ds = driver.Create(temp_tile, x_size, y_size, 1, gdal.GDT_Byte)
+            
+            if src_ds.GetGeoTransform():
+                out_ds.SetGeoTransform(src_ds.GetGeoTransform())
+            if src_ds.GetProjection():
+                out_ds.SetProjection(src_ds.GetProjection())
+            
+            out_ds.GetRasterBand(1).WriteArray(result)
+            out_ds.FlushCache()
+            out_ds = None
+            src_ds = None
+            
+            input_tile = temp_tile
+            num_bands = 1
+        
         # Do the MRF creation from the input tile
         gdal_translate_command_list = [
             "gdal_translate",
             "-q",
-            "-b",
-            "1",
-            "-b",
-            "2",
-            "-b",
-            "3",
+        ]
+        
+        # Add band selection for grayscale (1 band) and RGB+Alpha (4 bands)
+        # For grayscale: explicitly select band 1 to ensure single-band JPEG output
+        # For RGB+Alpha: explicitly select bands 1-3 (RGB) and drop alpha band 4
+        if num_bands == 1:
+            gdal_translate_command_list.extend(["-b", "1"])
+        elif num_bands == 4:
+            gdal_translate_command_list.extend(["-b", "1", "-b", "2", "-b", "3"])
+        
+        gdal_translate_command_list.extend([
             "-of",
             "MRF",
             "-co",
@@ -2963,10 +3022,10 @@ if mrf_compression_type.lower() == "zen":
             blocksize,
             "-co",
             "PHOTOMETRIC=DEFAULT",
-        ]
+        ])
         gdal_translate_command_list.append("-co")
         gdal_translate_command_list.append("QUALITY=" + quality_prec)
-        gdal_translate_command_list.append(tile)
+        gdal_translate_command_list.append(input_tile)
         gdal_translate_command_list.append(tile_mrf)
 
         # Log and execute gdal_translate to generate "input" ZenJPEG MRFs
@@ -2979,6 +3038,10 @@ if mrf_compression_type.lower() == "zen":
         gdal_translate_stderr_file.close()
         if os.path.getsize(gdal_translate_stderr_filename) == 0:
             remove_file(gdal_translate_stderr_filename)
+        
+        # Clean up temporary masked tile if it was created
+        if is_grayscale_alpha and temp_tile and os.path.isfile(temp_tile):
+            remove_file(temp_tile)
 
         alltiles[i] = tile_mrf
 
