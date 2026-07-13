@@ -1898,6 +1898,15 @@ class TestModWmtsWrapper(unittest.TestCase):
             tile_url)
         self.assertTrue(check_tile_request(tile_url, ref_hash), errstring)
 
+    def test_zenjpeg_convert_mrf_date_yeardir_tile_jpeg(self):
+        # This requests a tile containing no transparency, expecting a JPG response with PNG file extension
+        tile_url = 'http://localhost/mod_wmts_wrapper_mrf/test_zenjpeg_convert_mrf_date_yeardir/default/2012-02-22/2km/2/1/1.png'
+
+        ref_hash = '2df5ac8f7f3d44e0dfe1570102ec3dc7'
+        errstring = 'Tile at URL:{} was not the same as what was expected.'.format(
+            tile_url)
+        self.assertTrue(check_tile_request(tile_url, ref_hash, errstring))
+
     def test_brunsli_mrf_date_yeardir_tile_REST(self):
         tile_url = ('http://localhost/mod_wmts_wrapper_mrf'
                     '/test_brunsli_source_mrf_date_yeardir/default/2021-04-10'

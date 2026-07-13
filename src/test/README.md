@@ -446,6 +446,77 @@ The following test cases for `oe_generate_empty_tile.py` are defined in this [fi
 11. Converting a v1.1.0 SLD to a colormap using `SLDtoColorMap.py` with the `--precision` option
 12. Converting a v1.1.0 SLD to a colormap using `SLDtoColorMap.py` with the `--densify` option with `r` specified for "ramp"
 
+
+## mod_wmts_wrapper Tests
+
+The following tests are implemented in `test_mod_wmts_wrapper.py`:
+
+**REST API Error Tests:**
+1. **test_REST_bad_layer**: Invalid layer name
+2. **test_REST_bad_style**: Invalid style parameter
+3. **test_REST_bad_tilematrixset**: Invalid tile matrix set
+4. **test_REST_invalid_tilematrix**: Tile matrix out of range
+5. **test_REST_bad_tilematrix_value**: Non-integer tile matrix value
+6. **test_REST_bad_tilematrix_range**: Tile matrix exceeds maximum
+7. **test_REST_row_out_of_range**: Tile row out of range
+8. **test_REST_bad_tilerow_value**: Non-integer tile row value
+9. **test_REST_tilecol_out_of_range**: Tile column out of range
+10. **test_REST_bad_tilecol_value**: Non-integer tile column value
+11. **test_REST_bad_format**: Invalid format parameter
+12. **test_REST_bad_url**: Malformed REST URL
+
+**KVP (Key-Value Pair) Error Tests:**
+13. **test_kvp_missing_request**: Missing REQUEST parameter
+14. **test_kvp_missing_service**: Missing SERVICE parameter
+15. **test_kvp_missing_version**: Missing VERSION parameter
+16. **test_kvp_missing_layer**: Missing LAYER parameter
+17. **test_kvp_missing_format**: Missing FORMAT parameter
+18. **test_kvp_missing_tilematrixset**: Missing TILEMATRIXSET parameter
+19. **test_kvp_missing_tilematrix**: Missing TILEMATRIX parameter
+20. **test_kvp_missing_tilerow**: Missing TILEROW parameter
+21. **test_kvp_missing_tilecol**: Missing TILECOL parameter
+22. **test_kvp_bad_service**: Invalid SERVICE parameter
+23. **test_kvp_bad_request**: Invalid REQUEST parameter
+24. **test_kvp_bad_version**: Invalid VERSION parameter
+25. **test_kvp_bad_layer**: Invalid LAYER parameter
+26. **test_kvp_bad_style**: Invalid STYLE parameter
+27. **test_kvp_bad_format**: Invalid FORMAT parameter
+28. **test_kvp_bad_tilematrixset**: Invalid TILEMATRIXSET parameter
+29. **test_kvp_bad_tilematrix_value**: Non-integer TILEMATRIX value
+30. **test_kvp_bad_tilerow_value**: Non-integer TILEROW value
+31. **test_kvp_bad_tilecol_value**: Non-integer TILECOL value
+32. **test_kvp_invalid_tilematrix_**: Invalid TILEMATRIX range
+33. **test_kvp_tilerow_out_of_range**: TILEROW out of range
+34. **test_kvp_tilecol_out_of_range**: TILECOL out of range
+35. **test_kvp_bad_time_format**: Invalid time format
+36. **test_kvp_bad_time_out_of_range**: Time parameter out of range
+
+**mod_mrf Tile Request Tests:**
+37. **test_mod_mrf_nodate_tile**: Static layer tile request
+38. **test_mod_mrf_date_tile_default**: Date-based layer with default date
+39. **test_mod_mrf_date_tile**: Date-based layer with specified date
+40. **test_mod_mrf_datetime_milliseconds_tile**: Datetime with milliseconds (REST)
+41. **test_kvp_mod_mrf_datetime_milliseconds_tile**: Datetime with milliseconds (KVP)
+42. **test_mod_mrf_nodate_tile_headers**: Verify headers for static layer
+43. **test_mod_mrf_defaultdate_tile_headers**: Verify headers for default date
+44. **test_mod_mrf_date_tile_headers**: Verify headers for date-based layer
+45. **test_mod_mrf_best_tile_headers**: Verify headers for best layer
+46. **test_mod_mrf_date_tile_yeardir**: Date-based layer with year directory structure
+47. **test_mod_mrf_date_tile_daydir**: Date-based layer with day directory structure
+48. **test_mod_mrf_date_out_of_range**: Date parameter out of valid range
+
+**mod_reproject Tile Request Tests:**
+49. **test_mod_reproject_nodate_tile**: Static reprojected layer tile
+50. **test_mod_reproject_default_tile**: Reprojected layer with default date
+51. **test_mod_reproject_date_tile**: Reprojected layer with specified date
+
+**ZenJPEG and Brunsli Tests:**
+52. **test_zenjpeg_source_mrf_date_yeardir_tile**: ZenJPEG source layer tile
+53. **test_zenjpeg_convert_mrf_date_yeardir_tile**: ZenJPEG conversion to PNG
+54. **test_zenjpeg_convert_mrf_date_yeardir_tile_jpeg**: ZenJPEG passthrough for non-transparent tiles
+55. **test_brunsli_mrf_date_yeardir_tile_REST**: Brunsli-compressed tile (REST)
+56. **test_brunsli_mrf_date_yeardir_tile_kvp**: Brunsli-compressed tile (KVP)
+
 --------
 ## image_compare.py Tests
 
