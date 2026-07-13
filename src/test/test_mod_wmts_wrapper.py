@@ -1905,7 +1905,7 @@ class TestModWmtsWrapper(unittest.TestCase):
         ref_hash = '2df5ac8f7f3d44e0dfe1570102ec3dc7'
         errstring = 'Tile at URL:{} was not the same as what was expected.'.format(
             tile_url)
-        self.assertTrue(check_tile_request(tile_url, ref_hash, errstring))
+        self.assertTrue(check_tile_request(tile_url, ref_hash), errstring)
 
     def test_brunsli_mrf_date_yeardir_tile_REST(self):
         tile_url = ('http://localhost/mod_wmts_wrapper_mrf'
