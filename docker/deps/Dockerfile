@@ -40,8 +40,8 @@ RUN echo 'will cite' | parallel --citation || true
 
 # Install supercronic
 WORKDIR /tmp
-RUN wget https://go.dev/dl/go1.26.4.linux-amd64.tar.gz && \
-    tar xf go1.26.4.linux-amd64.tar.gz && \
+RUN wget https://go.dev/dl/go1.26.5.linux-amd64.tar.gz && \
+    tar xf go1.26.5.linux-amd64.tar.gz && \
     mv go /usr/local/ && \
     ln -s /usr/local/go/bin/go /usr/local/bin/go && \
     wget https://github.com/aptible/supercronic/archive/refs/tags/v0.2.46.tar.gz && \
@@ -85,13 +85,13 @@ RUN git clone --depth=1 https://github.com/google/brunsli.git && \
 WORKDIR /tmp
 RUN dnf install -y yum-utils-4.7.0 rpm-build-4.19.1.1 && \
     dnf clean all && \
-    yumdownloader --source httpd-2.4.63-13.el10_2.1.x86_64 && \
+    yumdownloader --source httpd-2.4.63-13.el10_2.4.x86_64 && \
     HOME="/tmp" rpm -ivh httpd-*.src.rpm && \
     # SECURITY FIX (REVERT LATER): Override Release field in httpd.spec to force build dependencies
     # to use patched version 13.el10_2.1 instead of vulnerable 13.el10.1
     # Addresses vulnerable packages: httpd, httpd-core, httpd-devel, httpd-filesystem,
-    # httpd-manual, httpd-tools, mod_lua, mod_ssl (all 13.el10.1 -> 13.el10_2.1)
-    sed -i 's/Release: 13%{?dist}/Release: 13.el10_2.1/g' /tmp/rpmbuild/SPECS/httpd.spec && \
+    # httpd-manual, httpd-tools, mod_lua, mod_ssl (all 13.el10.1 -> 13.el10_4.1)
+    sed -i 's/Release: 13%{?dist}/Release: 13.el10_2.4/g' /tmp/rpmbuild/SPECS/httpd.spec && \
     yum-builddep -y /tmp/rpmbuild/SPECS/httpd.spec
 
 # Copy OnEarth to home directory
