@@ -87,11 +87,6 @@ RUN dnf install -y yum-utils-4.7.0 rpm-build-4.19.1.1 && \
     dnf clean all && \
     yumdownloader --source httpd-2.4.63-13.el10_2.4.x86_64 && \
     HOME="/tmp" rpm -ivh httpd-*.src.rpm && \
-    # SECURITY FIX (REVERT LATER): Override Release field in httpd.spec to force build dependencies
-    # to use patched version 13.el10_2.1 instead of vulnerable 13.el10.1
-    # Addresses vulnerable packages: httpd, httpd-core, httpd-devel, httpd-filesystem,
-    # httpd-manual, httpd-tools, mod_lua, mod_ssl (all 13.el10.1 -> 13.el10_4.1)
-    # sed -i 's/Release: 13%{?dist}/Release: 13.el10_2.4/g' /tmp/rpmbuild/SPECS/httpd.spec && \
     yum-builddep -y /tmp/rpmbuild/SPECS/httpd.spec
 
 # Copy OnEarth to home directory
