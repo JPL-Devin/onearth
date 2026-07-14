@@ -25,11 +25,10 @@ import subprocess
 import time
 import redis
 import requests
-from oe_test_utils import restart_apache, make_dir_tree, remove_redis_layer, seed_redis_data
+from oe_test_utils import restart_apache, make_dir_tree, remove_redis_layer, seed_redis_data, xml_compare
 import shutil
 from lxml import etree
 import json
-from formencode.doctest_xml_compare import xml_compare
 import math
 from functools import partial
 import datetime
