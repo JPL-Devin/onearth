@@ -11,6 +11,7 @@ import asyncio
 import json
 import statistics
 import time
+import random
 from collections import defaultdict
 from dataclasses import dataclass, asdict
 from datetime import datetime
@@ -19,6 +20,9 @@ import aiohttp
 
 # UAT environment base URL
 UAT_BASE_URL = "https://uat.gitc.earthdata.nasa.gov"
+
+# Layer time ranges - will be loaded from layer_time_ranges.json if available
+LAYER_TIME_RANGES = {}
 
 @dataclass
 class TestResult:
@@ -53,22 +57,78 @@ class OnEarthStressTester:
     def __init__(self, config: StressTestConfig):
         self.config = config
         self.results: List[TestResult] = []
+        self.load_time_ranges()
+
+    def load_time_ranges(self):
+        """Load layer time lists from JSON file created by time_ranges_for_stress_test.py"""
+        try:
+            with open('layer_time_ranges.json', 'r') as f:
+                global LAYER_TIME_RANGES
+                LAYER_TIME_RANGES = json.load(f)
+                total_times = sum(len(layer['times']) for layer in LAYER_TIME_RANGES.values())
+                print(f"Loaded {len(LAYER_TIME_RANGES)} layers with {total_times} total unique times")
+                for layer_name, data in LAYER_TIME_RANGES.items():
+                    print(f"  {layer_name}: {data['count']} times")
+        except FileNotFoundError:
+            print("Warning: layer_time_ranges.json not found. Run time_ranges_for_stress_test.py first.")
+        except Exception as e:
+            print(f"Warning: Could not load layer_time_ranges.json: {e}")
+
+    def get_layer_times(self, layer_name: str, count: int = None) -> List[str]:
+        """
+        Get actual time strings for a layer from the complete list in layer_time_ranges.json.
+        These are actual times extracted from S3 file names - no inference or ranges.
+
+        Args:
+            layer_name: Name of the layer
+            count: Number of times to randomly sample (if None, returns all times)
+
+        Returns:
+            List of time strings in YYYY-MM-DDTHH:MM:SS format for OnEarth URLs
+        """
+        if layer_name not in LAYER_TIME_RANGES:
+            return []
+
+        all_times = LAYER_TIME_RANGES[layer_name]['times']
+        if not all_times:
+            return []
+
+        # If count is specified, randomly sample that many times from the complete list
+        if count and len(all_times) > count:
+            sampled_times = random.sample(all_times, count)
+        else:
+            sampled_times = all_times
+
+        # Convert each actual time to OnEarth URL format
+        time_strings = []
+        for t in sampled_times:
+            year = t['year']
+            month = t['month']
+            day = t['day']
+            hour = t['hour']
+            minute = t['minute']
+            second = t['second']
+
+            # Build full timestamp: YYYY-MM-DDTHH:MM:SSZ
+            time_strings.append(f"{year}-{month}-{day}T{hour}:{minute}:{second}Z")
+
+        return time_strings
 
     async def fetch_url(self, session: aiohttp.ClientSession, url: str, semaphore: asyncio.Semaphore) -> tuple:
-        """Fetch a URL and return response time and status"""
+        """Fetch a URL and return response time, status, error, and url"""
         async with semaphore:
             start_time = time.time()
             try:
                 async with session.get(url, ssl=False) as response:
                     await response.read()
                     response_time = (time.time() - start_time) * 1000  # Convert to ms
-                    return response_time, response.status, None
+                    return response_time, response.status, None, url
             except asyncio.TimeoutError:
                 response_time = (time.time() - start_time) * 1000
-                return response_time, 0, "timeout"
+                return response_time, 0, "timeout", url
             except Exception as e:
                 response_time = (time.time() - start_time) * 1000
-                return response_time, 0, str(type(e).__name__)
+                return response_time, 0, str(type(e).__name__), url
 
     async def run_test(self, test_name: str, url: str, num_requests: int = None, timeout: int = None) -> TestResult:
         """Run a stress test on a specific URL"""
@@ -100,7 +160,7 @@ class OnEarthStressTester:
             # Progress indicator
             completed = 0
             for coro in asyncio.as_completed(tasks):
-                response_time, status, error = await coro
+                response_time, status, error, returned_url = await coro
                 response_times.append(response_time)
                 statuses.append(status)
                 if error:
@@ -166,6 +226,104 @@ class OnEarthStressTester:
             for error_type, count in result.error_types.items():
                 print(f"  {error_type}: {count}")
 
+    async def run_test_with_varying_times(self, test_name: str, base_url: str, layer_name: str,
+                                            resolution: str, num_requests: int = None, timeout: int = None) -> TestResult:
+        """
+        Run a stress test using actual times from S3 for this layer.
+        Each request will use an actual timestamp that exists in the S3 data.
+
+        Args:
+            test_name: Name of the test
+            base_url: Base portion of URL before the date
+            layer_name: Layer name to get times for
+            resolution: Resolution (e.g., '1km', '2km')
+            num_requests: Number of requests to make
+            timeout: Timeout in seconds
+        """
+        if num_requests is None:
+            num_requests = self.config.num_requests
+        if timeout is None:
+            timeout = self.config.timeout
+
+        # Get actual times from S3 for this layer (randomly sampled if more requests than times)
+        time_strings = self.get_layer_times(layer_name, count=num_requests)
+
+        if not time_strings:
+            print(f"Warning: No time data available for {layer_name}. Skipping test.")
+            return None
+
+        print(f"\n{'='*60}")
+        print(f"Running test: {test_name}")
+        print(f"Layer: {layer_name}")
+        print(f"Using {len(time_strings)} actual times from S3")
+        print(f"Time range: {min(time_strings)} to {max(time_strings)}")
+        print(f"Requests: {num_requests}, Concurrency: {self.config.concurrency}, Timeout: {timeout}s")
+        print(f"{'='*60}")
+
+        semaphore = asyncio.Semaphore(self.config.concurrency)
+        response_times = []
+        statuses = []
+        errors = defaultdict(int)
+
+        start_time = time.time()
+
+        # Create a new session with the specified timeout
+        connector = aiohttp.TCPConnector(limit=self.config.concurrency * 2)
+        client_timeout = aiohttp.ClientTimeout(total=timeout)
+
+        async with aiohttp.ClientSession(connector=connector, timeout=client_timeout) as session:
+            # Create URLs with different times
+            urls = []
+            for i in range(num_requests):
+                # Cycle through available times
+                time_str = time_strings[i % len(time_strings)]
+                url = f"{base_url}/{time_str}/{resolution}/0/0/0.png"
+                urls.append(url)
+
+            tasks = [self.fetch_url(session, url, semaphore) for url in urls]
+
+            # Progress indicator
+            completed = 0
+            for coro in asyncio.as_completed(tasks):
+                response_time, status, error, returned_url = await coro
+                response_times.append(response_time)
+                statuses.append(status)
+                if error:
+                    errors[error] += 1
+                    print(f"  Error: {error} (status: {status}) - URL: {returned_url}")
+                elif status >= 400:
+                    print(f"  HTTP Error: {status} - URL: {returned_url}")
+
+                completed += 1
+                if completed % max(1, num_requests // 10) == 0:
+                    print(f"Progress: {completed}/{num_requests} ({completed*100//num_requests}%)")
+
+        duration = time.time() - start_time
+
+        # Calculate statistics
+        successful = sum(1 for s in statuses if 200 <= s < 300)
+        failed = num_requests - successful
+
+        result = TestResult(
+            name=test_name,
+            total_requests=num_requests,
+            successful=successful,
+            failed=failed,
+            duration_seconds=duration,
+            requests_per_second=num_requests / duration if duration > 0 else 0,
+            avg_response_time_ms=statistics.mean(response_times),
+            min_response_time_ms=min(response_times),
+            max_response_time_ms=max(response_times),
+            p50_response_time_ms=statistics.median(response_times),
+            p95_response_time_ms=self._percentile(response_times, 95),
+            p99_response_time_ms=self._percentile(response_times, 99),
+            error_types=dict(errors)
+        )
+
+        self.results.append(result)
+        self._print_result(result)
+        return result
+
     async def run_all_tests(self):
         """Run all stress tests"""
         tile_requests = self.config.num_requests * 3  # More requests for tile tests
@@ -199,11 +357,20 @@ class OnEarthStressTester:
         print("DESCRIBEDOMAINS TESTS")
         print("="*60)
 
-        # DescribeDomains with time range
-        await self.run_test(
-            "DescribeDomains - TEMPO with time range",
-            f"{UAT_BASE_URL}/wmts/epsg4326/std/1.0.0/TEMPO_L2_Ozone_Cloud_Fraction_Granule_v3_STD/default/1km/all/2024-01-01T00:00:00Z--2024-12-03T00:00:00Z.xml"
-        )
+        # Get time range for TEMPO layer
+        tempo_times = self.get_layer_times('TEMPO_L2_Ozone_Cloud_Fraction_Granule_v3_STD')
+        if tempo_times:
+            first_date = min(tempo_times)
+            last_date = max(tempo_times)
+            await self.run_test(
+                "DescribeDomains - TEMPO with time range",
+                f"{UAT_BASE_URL}/wmts/epsg4326/std/1.0.0/TEMPO_L2_Ozone_Cloud_Fraction_Granule_v3_STD/default/1km/all/{first_date}--{last_date}.xml"
+            )
+        else:
+            await self.run_test(
+                "DescribeDomains - TEMPO with time range",
+                f"{UAT_BASE_URL}/wmts/epsg4326/std/1.0.0/TEMPO_L2_Ozone_Cloud_Fraction_Granule_v3_STD/default/1km/all/2024-01-01T00:00:00Z--2024-12-03T00:00:00Z.xml"
+            )
 
         # DescribeDomains for all periods
         await self.run_test(
@@ -213,24 +380,28 @@ class OnEarthStressTester:
 
         # DescribeDomains for another layer
         await self.run_test(
-            "DescribeDomains - MODIS Aqua AOD all periods",
-            f"{UAT_BASE_URL}/wmts/epsg4326/all/1.0.0/MODIS_Aqua_Aerosol_Optical_Depth_3k/default/2km/all/all.xml"
+            "DescribeDomains - Orbit Tracks Aqua Ascending all periods",
+            f"{UAT_BASE_URL}/wmts/epsg4326/all/1.0.0/OrbitTracks_Aqua_Ascending/default/2km/all/all.xml"
         )
 
-        # ===== Direct Tile Tests  =====
+        # ===== Direct Tile Tests with Varying Times =====
         print("\n" + "="*60)
-        print("DIRECT TILE TESTS (OE-STATUS)")
+        print("DIRECT TILE TESTS WITH VARYING TIMES")
         print("="*60)
 
-        await self.run_test(
-            "Direct Tile - Raster_Status JPEG (Level 0)",
-            f"{UAT_BASE_URL}/oe-status/Raster_Status/default/2004-08-01/16km/0/0/0.jpeg",
+        await self.run_test_with_varying_times(
+            "Direct Tile - TEMPO_L2_Ozone (varying times)",
+            f"{UAT_BASE_URL}/wmts/epsg4326/std/TEMPO_L2_Ozone_Cloud_Fraction_Granule_v3_STD/default",
+            "TEMPO_L2_Ozone_Cloud_Fraction_Granule_v3_STD",
+            "1km",
             num_requests=tile_requests
         )
 
-        await self.run_test(
-            "Direct Tile - Raster_Status JPEG (Level 1)",
-            f"{UAT_BASE_URL}/oe-status/Raster_Status/default/2004-08-01/16km/1/0/0.jpeg",
+        await self.run_test_with_varying_times(
+            "Direct Tile - SMAP (varying times)",
+            f"{UAT_BASE_URL}/wmts/epsg4326/std/SMAP_L4_Analyzed_Root_Zone_Soil_Moisture_v7_STD/default",
+            "SMAP_L4_Analyzed_Root_Zone_Soil_Moisture_v7_STD",
+            "2km",
             num_requests=tile_requests
         )
 
