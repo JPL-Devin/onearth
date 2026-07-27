@@ -1200,6 +1200,41 @@ class TestModWmtsWrapper(unittest.TestCase):
                                 'TILEMATRIXSET',
                                 'TILEMATRIXSET is invalid for LAYER')
 
+    def test_REST_missing_time_returns_tms_error(self):
+        for module in ('mrf', 'reproject'):
+            for fmt in ('date', 'date_yeardir'):
+                if module == 'reproject' and fmt == 'date_yeardir':
+                    continue
+
+                module_url = 'mod_wmts_wrapper_' + module
+                layer_name = 'test_{}_{}'.format(module, fmt)
+
+                # Time parameter is omitted entirely; should report TMS error, not TIME error
+                test_url = '{}/{}/{}/default/bad_tms/0/0/0.jpg'.format(
+                    base_url, module_url, layer_name)
+
+                test_wmts_error(self, test_url, 400, 'InvalidParameterValue',
+                                'TILEMATRIXSET',
+                                'TILEMATRIXSET is invalid for LAYER')
+
+    def test_REST_malformed_time_returns_time_error(self):
+        for module in ('mrf', 'reproject'):
+            for fmt in ('date', 'date_yeardir'):
+                if module == 'reproject' and fmt == 'date_yeardir':
+                    continue
+
+                module_url = 'mod_wmts_wrapper_' + module
+                layer_name = 'test_{}_{}'.format(module, fmt)
+
+                tms = 'GoogleMapsCompatible_Level3' if module == 'reproject' else '16km'
+                # Malformed date (single-digit day); should report TIME error, not TMS error
+                test_url = '{}/{}/{}/default/2020-01-6/{}/0/0/0.jpg'.format(
+                    base_url, module_url, layer_name, tms)
+
+                test_wmts_error(self, test_url, 400, 'InvalidParameterValue',
+                                'TIME',
+                                'Invalid time format, must be YYYY-MM-DD or YYYY-MM-DDThh:mm:ssZ')
+
     def test_REST_invalid_tilematrix(self):
         for module in ('mrf', 'reproject'):
             for fmt in ('date', 'date_yeardir', 'nodate'):
