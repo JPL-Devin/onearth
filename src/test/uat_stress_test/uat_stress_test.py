@@ -128,16 +128,40 @@ class OnEarthStressTester:
                 response_time = (time.time() - start_time) * 1000
                 return response_time, 0, str(type(e).__name__), url
 
-    async def run_test(self, test_name: str, url: str, num_requests: int = None, timeout: int = None) -> TestResult:
-        """Run a stress test on a specific URL"""
-        if num_requests is None:
-            num_requests = self.config.num_requests
+    async def run_test(self, test_name: str, url = None, urls: List[str] = None,
+                       num_requests: int = None, timeout: int = None,
+                       header_info: str = None) -> TestResult:
+        """
+        Run a stress test on URL(s).
+
+        Args:
+            test_name: Name of the test
+            url: Single URL to test (requires num_requests)
+            urls: List of URLs to test (mutually exclusive with url)
+            num_requests: Number of requests (only used with url parameter)
+            timeout: Timeout in seconds
+            header_info: Additional info to print in test header
+        """
         if timeout is None:
             timeout = self.config.timeout
 
+        # Generate URL list
+        if urls is not None:
+            url_list = urls
+            num_requests = len(urls)
+        elif url is not None:
+            if num_requests is None:
+                num_requests = self.config.num_requests
+            url_list = [url] * num_requests
+        else:
+            raise ValueError("Must provide either 'url' or 'urls' parameter")
+
         print(f"\n{'='*60}")
         print(f"Running test: {test_name}")
-        print(f"URL: {url}")
+        if header_info:
+            print(header_info)
+        elif url is not None:
+            print(f"URL: {url}")
         print(f"Requests: {num_requests}, Concurrency: {self.config.concurrency}, Timeout: {timeout}s")
         print(f"{'='*60}")
 
@@ -153,7 +177,7 @@ class OnEarthStressTester:
         client_timeout = aiohttp.ClientTimeout(total=timeout)
 
         async with aiohttp.ClientSession(connector=connector, timeout=client_timeout) as session:
-            tasks = [self.fetch_url(session, url, semaphore) for _ in range(num_requests)]
+            tasks = [self.fetch_url(session, url, semaphore) for url in url_list]
 
             # Progress indicator
             completed = 0
@@ -243,8 +267,6 @@ class OnEarthStressTester:
         """
         if num_requests is None:
             num_requests = self.config.num_requests
-        if timeout is None:
-            timeout = self.config.timeout
 
         # Get actual times from S3 for this layer (randomly sampled if more requests than times)
         time_strings = self.get_layer_times(layer_name, count=num_requests)
@@ -253,76 +275,19 @@ class OnEarthStressTester:
             print(f"Warning: No time data available for {layer_name}. Skipping test.")
             return None
 
-        print(f"\n{'='*60}")
-        print(f"Running test: {test_name}")
-        print(f"Layer: {layer_name}")
-        print(f"Using {len(time_strings)} actual times from S3")
-        print(f"Time range: {min(time_strings)} to {max(time_strings)}")
-        print(f"Requests: {num_requests}, Concurrency: {self.config.concurrency}, Timeout: {timeout}s")
-        print(f"{'='*60}")
+        # Create URLs with different times
+        urls = []
+        for i in range(num_requests):
+            # Cycle through available times
+            time_str = time_strings[i % len(time_strings)]
+            url = f"{base_url}/{time_str}/{tile_matrix_set}/0/0/0.png"
+            urls.append(url)
 
-        semaphore = asyncio.Semaphore(self.config.concurrency)
-        response_times = []
-        statuses = []
-        errors = defaultdict(int)
+        header_info = (f"Layer: {layer_name}\n"
+                      f"Using {len(time_strings)} actual times from S3\n"
+                      f"Time range: {min(time_strings)} to {max(time_strings)}")
 
-        start_time = time.time()
-
-        # Create a new session with the specified timeout
-        connector = aiohttp.TCPConnector(limit=self.config.concurrency * 2)
-        client_timeout = aiohttp.ClientTimeout(total=timeout)
-
-        async with aiohttp.ClientSession(connector=connector, timeout=client_timeout) as session:
-            # Create URLs with different times
-            urls = []
-            for i in range(num_requests):
-                # Cycle through available times
-                time_str = time_strings[i % len(time_strings)]
-                url = f"{base_url}/{time_str}/{tile_matrix_set}/0/0/0.png"
-                urls.append(url)
-
-            tasks = [self.fetch_url(session, url, semaphore) for url in urls]
-
-            completed = 0
-            for coro in asyncio.as_completed(tasks):
-                response_time, status, error, returned_url = await coro
-                response_times.append(response_time)
-                statuses.append(status)
-                if error:
-                    errors[error] += 1
-                    print(f"  Error: {error} (status: {status}) - URL: {returned_url}")
-                elif status >= 400:
-                    print(f"  HTTP Error: {status} - URL: {returned_url}")
-
-                completed += 1
-                if completed % max(1, num_requests // 10) == 0:
-                    print(f"Progress: {completed}/{num_requests} ({completed*100//num_requests}%)")
-
-        duration = time.time() - start_time
-
-        # Calculate statistics
-        successful = sum(1 for s in statuses if 200 <= s < 300)
-        failed = num_requests - successful
-
-        result = TestResult(
-            name=test_name,
-            total_requests=num_requests,
-            successful=successful,
-            failed=failed,
-            duration_seconds=duration,
-            requests_per_second=num_requests / duration if duration > 0 else 0,
-            avg_response_time_ms=statistics.mean(response_times),
-            min_response_time_ms=min(response_times),
-            max_response_time_ms=max(response_times),
-            p50_response_time_ms=statistics.median(response_times),
-            p95_response_time_ms=self._percentile(response_times, 95),
-            p99_response_time_ms=self._percentile(response_times, 99),
-            error_types=dict(errors)
-        )
-
-        self.results.append(result)
-        self._print_result(result)
-        return result
+        return await self.run_test(test_name, urls=urls, timeout=timeout, header_info=header_info)
 
     async def run_test_with_varying_tiles(self, test_name: str, base_url: str, layer_name: str,
                                            tile_matrix_set: str, zoom_level: int = 0, num_requests: int = None,
@@ -342,8 +307,6 @@ class OnEarthStressTester:
         """
         if num_requests is None:
             num_requests = self.config.num_requests
-        if timeout is None:
-            timeout = self.config.timeout
 
         # Get actual times from S3 for this layer
         time_strings = self.get_layer_times(layer_name, count=num_requests)
@@ -364,79 +327,70 @@ class OnEarthStressTester:
         else:
             tile_coords = [(zoom_level, 0, 0)]  # Default to single tile for higher zooms
 
-        print(f"\n{'='*60}")
-        print(f"Running test: {test_name}")
-        print(f"Layer: {layer_name}")
-        print(f"Zoom level: {zoom_level}, Testing {len(tile_coords)} different tiles")
-        print(f"Using {len(time_strings)} actual times from S3")
-        print(f"Time range: {min(time_strings)} to {max(time_strings)}")
-        print(f"Requests: {num_requests}, Concurrency: {self.config.concurrency}, Timeout: {timeout}s")
-        print(f"{'='*60}")
+        # Create URLs with different times and tile coordinates
+        # URL format: {base_url}/{time}/{tile_matrix_set}/{zoom}/{row}/{col}.png
+        urls = []
+        for i in range(num_requests):
+            # Cycle through available times and tiles
+            time_str = time_strings[i % len(time_strings)]
+            z, row, col = tile_coords[i % len(tile_coords)]
+            url = f"{base_url}/{time_str}/{tile_matrix_set}/{z}/{row}/{col}.png"
+            urls.append(url)
 
-        semaphore = asyncio.Semaphore(self.config.concurrency)
-        response_times = []
-        statuses = []
-        errors = defaultdict(int)
+        header_info = (f"Layer: {layer_name}\n"
+                      f"Zoom level: {zoom_level}, Testing {len(tile_coords)} different tiles\n"
+                      f"Using {len(time_strings)} actual times from S3\n"
+                      f"Time range: {min(time_strings)} to {max(time_strings)}")
 
-        start_time = time.time()
+        return await self.run_test(test_name, urls=urls, timeout=timeout, header_info=header_info)
 
-        # Create a new session with the specified timeout
-        connector = aiohttp.TCPConnector(limit=self.config.concurrency * 2)
-        client_timeout = aiohttp.ClientTimeout(total=timeout)
+    async def run_test_with_varying_describe_domains(self, test_name: str, layer_name: str,
+                                                       tilematrixset: str = "1km", projection: str = "epsg4326",
+                                                       quality: str = "std", num_requests: int = None,
+                                                       timeout: int = None) -> TestResult:
+        """
+        Run a DescribeDomains stress test using actual times from S3 for this layer.
+        Each request will use different start and end times from the available data.
 
-        async with aiohttp.ClientSession(connector=connector, timeout=client_timeout) as session:
-            # Create URLs with different times and tile coordinates
-            # URL format: {base_url}/{time}/{tile_matrix_set}/{zoom}/{row}/{col}.png
-            urls = []
-            for i in range(num_requests):
-                # Cycle through available times and tiles
-                time_str = time_strings[i % len(time_strings)]
-                z, row, col = tile_coords[i % len(tile_coords)]
-                url = f"{base_url}/{time_str}/{tile_matrix_set}/{z}/{row}/{col}.png"
-                urls.append(url)
+        Args:
+            test_name: Name of the test
+            layer_name: Layer name to get times for
+            tilematrixset: Tile matrix set (default: "1km")
+            projection: Projection (default: "epsg4326")
+            quality: Quality level (default: "std")
+            num_requests: Number of requests to make
+            timeout: Timeout in seconds
+        """
+        if num_requests is None:
+            num_requests = self.config.num_requests
 
-            tasks = [self.fetch_url(session, url, semaphore) for url in urls]
+        # Get actual times from S3 for this layer
+        time_strings = self.get_layer_times(layer_name)
 
-            completed = 0
-            for coro in asyncio.as_completed(tasks):
-                response_time, status, error, returned_url = await coro
-                response_times.append(response_time)
-                statuses.append(status)
-                if error:
-                    errors[error] += 1
-                    print(f"  Error: {error} (status: {status}) - URL: {returned_url}")
-                elif status >= 400:
-                    print(f"  HTTP Error: {status} - URL: {returned_url}")
+        if not time_strings or len(time_strings) < 2:
+            print(f"Warning: Not enough time data available for {layer_name}. Skipping test.")
+            return None
 
-                completed += 1
-                if completed % max(1, num_requests // 10) == 0:
-                    print(f"Progress: {completed}/{num_requests} ({completed*100//num_requests}%)")
+        # Create DescribeDomains URLs with different time ranges
+        # Format: /wmts/{projection}/{quality}/1.0.0/{layer}/default/{tilematrixset}/all/{start}--{end}.xml
+        urls = []
+        sorted_times = sorted(time_strings)
 
-        duration = time.time() - start_time
+        for i in range(num_requests):
+            # Pick two random times from the list, ensuring start < end
+            indices = random.sample(range(len(sorted_times)), 2)
+            start_idx, end_idx = sorted(indices)
+            start_time_str = sorted_times[start_idx]
+            end_time_str = sorted_times[end_idx]
 
-        # Calculate statistics
-        successful = sum(1 for s in statuses if 200 <= s < 300)
-        failed = num_requests - successful
+            url = f"{UAT_BASE_URL}/wmts/{projection}/{quality}/1.0.0/{layer_name}/default/{tilematrixset}/all/{start_time_str}--{end_time_str}.xml"
+            urls.append(url)
 
-        result = TestResult(
-            name=test_name,
-            total_requests=num_requests,
-            successful=successful,
-            failed=failed,
-            duration_seconds=duration,
-            requests_per_second=num_requests / duration if duration > 0 else 0,
-            avg_response_time_ms=statistics.mean(response_times),
-            min_response_time_ms=min(response_times),
-            max_response_time_ms=max(response_times),
-            p50_response_time_ms=statistics.median(response_times),
-            p95_response_time_ms=self._percentile(response_times, 95),
-            p99_response_time_ms=self._percentile(response_times, 99),
-            error_types=dict(errors)
-        )
+        header_info = (f"Layer: {layer_name}\n"
+                      f"Using {len(time_strings)} actual times from S3 to generate time ranges\n"
+                      f"Time extent: {min(time_strings)} to {max(time_strings)}")
 
-        self.results.append(result)
-        self._print_result(result)
-        return result
+        return await self.run_test(test_name, urls=urls, timeout=timeout, header_info=header_info)
 
     async def run_test_with_varying_wms(self, test_name: str, base_wms_url: str, layer_name: str,
                                          bbox: str = "-180,-90,180,90", width: int = 512, height: int = 512,
@@ -457,8 +411,6 @@ class OnEarthStressTester:
         """
         if num_requests is None:
             num_requests = self.config.num_requests
-        if timeout is None:
-            timeout = self.config.timeout
 
         # Get actual times from S3 for this layer
         time_strings = self.get_layer_times(layer_name, count=num_requests)
@@ -467,77 +419,20 @@ class OnEarthStressTester:
             print(f"Warning: No time data available for {layer_name}. Skipping test.")
             return None
 
-        print(f"\n{'='*60}")
-        print(f"Running test: {test_name}")
-        print(f"Layer: {layer_name}")
-        print(f"Using {len(time_strings)} actual times from S3")
-        print(f"Time range: {min(time_strings)} to {max(time_strings)}")
-        print(f"Requests: {num_requests}, Concurrency: {self.config.concurrency}, Timeout: {timeout}s")
-        print(f"{'='*60}")
+        # Create WMS URLs with different times
+        # WMS format: {base_url}?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&LAYERS={layer}&STYLES=&FORMAT=image/png&TRANSPARENT=true&HEIGHT={height}&WIDTH={width}&CRS=EPSG:4326&BBOX={bbox}&TIME={time}
+        urls = []
+        for i in range(num_requests):
+            # Cycle through available times
+            time_str = time_strings[i % len(time_strings)]
+            url = f"{base_wms_url}?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&LAYERS={layer_name}&STYLES=&FORMAT=image/png&TRANSPARENT=true&HEIGHT={height}&WIDTH={width}&CRS=EPSG:4326&BBOX={bbox}&TIME={time_str}"
+            urls.append(url)
 
-        semaphore = asyncio.Semaphore(self.config.concurrency)
-        response_times = []
-        statuses = []
-        errors = defaultdict(int)
+        header_info = (f"Layer: {layer_name}\n"
+                      f"Using {len(time_strings)} actual times from S3\n"
+                      f"Time range: {min(time_strings)} to {max(time_strings)}")
 
-        start_time = time.time()
-
-        # Create a new session with the specified timeout
-        connector = aiohttp.TCPConnector(limit=self.config.concurrency * 2)
-        client_timeout = aiohttp.ClientTimeout(total=timeout)
-
-        async with aiohttp.ClientSession(connector=connector, timeout=client_timeout) as session:
-            # Create WMS URLs with different times
-            # WMS format: {base_url}?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&LAYERS={layer}&STYLES=&FORMAT=image/png&TRANSPARENT=true&HEIGHT={height}&WIDTH={width}&CRS=EPSG:4326&BBOX={bbox}&TIME={time}
-            urls = []
-            for i in range(num_requests):
-                # Cycle through available times
-                time_str = time_strings[i % len(time_strings)]
-                url = f"{base_wms_url}?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&LAYERS={layer_name}&STYLES=&FORMAT=image/png&TRANSPARENT=true&HEIGHT={height}&WIDTH={width}&CRS=EPSG:4326&BBOX={bbox}&TIME={time_str}"
-                urls.append(url)
-
-            tasks = [self.fetch_url(session, url, semaphore) for url in urls]
-
-            completed = 0
-            for coro in asyncio.as_completed(tasks):
-                response_time, status, error, returned_url = await coro
-                response_times.append(response_time)
-                statuses.append(status)
-                if error:
-                    errors[error] += 1
-                    print(f"  Error: {error} (status: {status}) - URL: {returned_url}")
-                elif status >= 400:
-                    print(f"  HTTP Error: {status} - URL: {returned_url}")
-
-                completed += 1
-                if completed % max(1, num_requests // 10) == 0:
-                    print(f"Progress: {completed}/{num_requests} ({completed*100//num_requests}%)")
-
-        duration = time.time() - start_time
-
-        # Calculate statistics
-        successful = sum(1 for s in statuses if 200 <= s < 300)
-        failed = num_requests - successful
-
-        result = TestResult(
-            name=test_name,
-            total_requests=num_requests,
-            successful=successful,
-            failed=failed,
-            duration_seconds=duration,
-            requests_per_second=num_requests / duration if duration > 0 else 0,
-            avg_response_time_ms=statistics.mean(response_times),
-            min_response_time_ms=min(response_times),
-            max_response_time_ms=max(response_times),
-            p50_response_time_ms=statistics.median(response_times),
-            p95_response_time_ms=self._percentile(response_times, 95),
-            p99_response_time_ms=self._percentile(response_times, 99),
-            error_types=dict(errors)
-        )
-
-        self.results.append(result)
-        self._print_result(result)
-        return result
+        return await self.run_test(test_name, urls=urls, timeout=timeout, header_info=header_info)
 
     async def run_all_tests(self):
         """Run all stress tests"""
@@ -579,28 +474,24 @@ class OnEarthStressTester:
         print("DESCRIBEDOMAINS TESTS")
         print("="*60)
 
-        # Get time range for TEMPO layer
-        tempo_times = self.get_layer_times('TEMPO_L2_Ozone_Cloud_Fraction_Granule_v3_STD')
-        if tempo_times:
-            first_date = min(tempo_times)
-            last_date = max(tempo_times)
-            await self.run_test(
-                "DescribeDomains - TEMPO with time range",
-                f"{UAT_BASE_URL}/wmts/epsg4326/std/1.0.0/TEMPO_L2_Ozone_Cloud_Fraction_Granule_v3_STD/default/1km/all/{first_date}--{last_date}.xml"
-            )
-        else:
-            await self.run_test(
-                "DescribeDomains - TEMPO with time range",
-                f"{UAT_BASE_URL}/wmts/epsg4326/std/1.0.0/TEMPO_L2_Ozone_Cloud_Fraction_Granule_v3_STD/default/1km/all/2024-01-01T00:00:00Z--2024-12-03T00:00:00Z.xml"
-            )
-
-        # DescribeDomains for all periods
-        await self.run_test(
-            "DescribeDomains - TEMPO_L3 all periods",
-            f"{UAT_BASE_URL}/wmts/epsg4326/best/1.0.0/TEMPO_L3_NO2_Vertical_Column_Stratosphere/default/1km/7/all.xml"
+        # DescribeDomains with varying time ranges
+        await self.run_test_with_varying_describe_domains(
+            "DescribeDomains - TEMPO_L2 Ozone (varying time ranges)",
+            "TEMPO_L2_Ozone_Cloud_Fraction_Granule_v3_STD",
+            tilematrixset="1km",
+            projection="epsg4326",
+            quality="std"
         )
 
-        # DescribeDomains for another layer
+        await self.run_test_with_varying_describe_domains(
+            "DescribeDomains - MODIS AOD (varying time ranges)",
+            "MODIS_Combined_Value_Added_AOD",
+            tilematrixset="2km",
+            projection="epsg4326",
+            quality="best"
+        )
+
+        # DescribeDomains for all periods 
         await self.run_test(
             "DescribeDomains - Orbit Tracks Aqua Ascending all periods",
             f"{UAT_BASE_URL}/wmts/epsg4326/all/1.0.0/OrbitTracks_Aqua_Ascending/default/2km/all/all.xml"
