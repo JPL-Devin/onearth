@@ -67,8 +67,6 @@ class OnEarthStressTester:
                 LAYER_TIME_RANGES = json.load(f)
                 total_times = sum(len(layer['times']) for layer in LAYER_TIME_RANGES.values())
                 print(f"Loaded {len(LAYER_TIME_RANGES)} layers with {total_times} total unique times")
-                for layer_name, data in LAYER_TIME_RANGES.items():
-                    print(f"  {layer_name}: {data['count']} times")
         except FileNotFoundError:
             print("Warning: layer_time_ranges.json not found. Run time_ranges_for_stress_test.py first.")
         except Exception as e:
@@ -165,6 +163,9 @@ class OnEarthStressTester:
                 statuses.append(status)
                 if error:
                     errors[error] += 1
+                    print(f"  Error: {error} (status: {status}) - URL: {returned_url}")
+                elif status >= 400:
+                    print(f"  HTTP Error: {status} - URL: {returned_url}")
 
                 completed += 1
                 if completed % max(1, num_requests // 10) == 0:
@@ -227,7 +228,7 @@ class OnEarthStressTester:
                 print(f"  {error_type}: {count}")
 
     async def run_test_with_varying_times(self, test_name: str, base_url: str, layer_name: str,
-                                            resolution: str, num_requests: int = None, timeout: int = None) -> TestResult:
+                                            tile_matrix_set: str, num_requests: int = None, timeout: int = None) -> TestResult:
         """
         Run a stress test using actual times from S3 for this layer.
         Each request will use an actual timestamp that exists in the S3 data.
@@ -236,7 +237,7 @@ class OnEarthStressTester:
             test_name: Name of the test
             base_url: Base portion of URL before the date
             layer_name: Layer name to get times for
-            resolution: Resolution (e.g., '1km', '2km')
+            tile_matrix_set: Tile Matrix Set (e.g., '1km', '2km')
             num_requests: Number of requests to make
             timeout: Timeout in seconds
         """
@@ -277,12 +278,226 @@ class OnEarthStressTester:
             for i in range(num_requests):
                 # Cycle through available times
                 time_str = time_strings[i % len(time_strings)]
-                url = f"{base_url}/{time_str}/{resolution}/0/0/0.png"
+                url = f"{base_url}/{time_str}/{tile_matrix_set}/0/0/0.png"
                 urls.append(url)
 
             tasks = [self.fetch_url(session, url, semaphore) for url in urls]
 
-            # Progress indicator
+            completed = 0
+            for coro in asyncio.as_completed(tasks):
+                response_time, status, error, returned_url = await coro
+                response_times.append(response_time)
+                statuses.append(status)
+                if error:
+                    errors[error] += 1
+                    print(f"  Error: {error} (status: {status}) - URL: {returned_url}")
+                elif status >= 400:
+                    print(f"  HTTP Error: {status} - URL: {returned_url}")
+
+                completed += 1
+                if completed % max(1, num_requests // 10) == 0:
+                    print(f"Progress: {completed}/{num_requests} ({completed*100//num_requests}%)")
+
+        duration = time.time() - start_time
+
+        # Calculate statistics
+        successful = sum(1 for s in statuses if 200 <= s < 300)
+        failed = num_requests - successful
+
+        result = TestResult(
+            name=test_name,
+            total_requests=num_requests,
+            successful=successful,
+            failed=failed,
+            duration_seconds=duration,
+            requests_per_second=num_requests / duration if duration > 0 else 0,
+            avg_response_time_ms=statistics.mean(response_times),
+            min_response_time_ms=min(response_times),
+            max_response_time_ms=max(response_times),
+            p50_response_time_ms=statistics.median(response_times),
+            p95_response_time_ms=self._percentile(response_times, 95),
+            p99_response_time_ms=self._percentile(response_times, 99),
+            error_types=dict(errors)
+        )
+
+        self.results.append(result)
+        self._print_result(result)
+        return result
+
+    async def run_test_with_varying_tiles(self, test_name: str, base_url: str, layer_name: str,
+                                           tile_matrix_set: str, zoom_level: int = 0, num_requests: int = None,
+                                           timeout: int = None) -> TestResult:
+        """
+        Run a stress test using actual times from S3 with varying tile coordinates.
+        Tests different tiles at the specified zoom level.
+
+        Args:
+            test_name: Name of the test
+            base_url: Base portion of URL before the date
+            layer_name: Layer name to get times for
+            tile_matrix_set: Tile Matrix Set (e.g., '1km', '2km')
+            zoom_level: Zoom level to test (default: 0)
+            num_requests: Number of requests to make
+            timeout: Timeout in seconds
+        """
+        if num_requests is None:
+            num_requests = self.config.num_requests
+        if timeout is None:
+            timeout = self.config.timeout
+
+        # Get actual times from S3 for this layer
+        time_strings = self.get_layer_times(layer_name, count=num_requests)
+
+        if not time_strings:
+            print(f"Warning: No time data available for {layer_name}. Skipping test.")
+            return None
+
+        # Define valid tile ranges for the zoom level (conservative for global layers)
+        # Format: (zoom, row, col) which maps to (z, y, x) in the URL
+        if zoom_level == 0:
+            tile_coords = [(0, 0, 0), (0, 0, 1)]  # Two tiles at zoom 0 for EPSG:4326
+        elif zoom_level == 1:
+            tile_coords = [(1, 0, 0), (1, 0, 1), (1, 1, 0), (1, 1, 1)]  # Four tiles at zoom 1
+        elif zoom_level == 2:
+            tile_coords = [(2, 0, 0), (2, 0, 1), (2, 0, 2), (2, 0, 3),
+                          (2, 1, 0), (2, 1, 1), (2, 1, 2), (2, 1, 3)]
+        else:
+            tile_coords = [(zoom_level, 0, 0)]  # Default to single tile for higher zooms
+
+        print(f"\n{'='*60}")
+        print(f"Running test: {test_name}")
+        print(f"Layer: {layer_name}")
+        print(f"Zoom level: {zoom_level}, Testing {len(tile_coords)} different tiles")
+        print(f"Using {len(time_strings)} actual times from S3")
+        print(f"Time range: {min(time_strings)} to {max(time_strings)}")
+        print(f"Requests: {num_requests}, Concurrency: {self.config.concurrency}, Timeout: {timeout}s")
+        print(f"{'='*60}")
+
+        semaphore = asyncio.Semaphore(self.config.concurrency)
+        response_times = []
+        statuses = []
+        errors = defaultdict(int)
+
+        start_time = time.time()
+
+        # Create a new session with the specified timeout
+        connector = aiohttp.TCPConnector(limit=self.config.concurrency * 2)
+        client_timeout = aiohttp.ClientTimeout(total=timeout)
+
+        async with aiohttp.ClientSession(connector=connector, timeout=client_timeout) as session:
+            # Create URLs with different times and tile coordinates
+            # URL format: {base_url}/{time}/{tile_matrix_set}/{zoom}/{row}/{col}.png
+            urls = []
+            for i in range(num_requests):
+                # Cycle through available times and tiles
+                time_str = time_strings[i % len(time_strings)]
+                z, row, col = tile_coords[i % len(tile_coords)]
+                url = f"{base_url}/{time_str}/{tile_matrix_set}/{z}/{row}/{col}.png"
+                urls.append(url)
+
+            tasks = [self.fetch_url(session, url, semaphore) for url in urls]
+
+            completed = 0
+            for coro in asyncio.as_completed(tasks):
+                response_time, status, error, returned_url = await coro
+                response_times.append(response_time)
+                statuses.append(status)
+                if error:
+                    errors[error] += 1
+                    print(f"  Error: {error} (status: {status}) - URL: {returned_url}")
+                elif status >= 400:
+                    print(f"  HTTP Error: {status} - URL: {returned_url}")
+
+                completed += 1
+                if completed % max(1, num_requests // 10) == 0:
+                    print(f"Progress: {completed}/{num_requests} ({completed*100//num_requests}%)")
+
+        duration = time.time() - start_time
+
+        # Calculate statistics
+        successful = sum(1 for s in statuses if 200 <= s < 300)
+        failed = num_requests - successful
+
+        result = TestResult(
+            name=test_name,
+            total_requests=num_requests,
+            successful=successful,
+            failed=failed,
+            duration_seconds=duration,
+            requests_per_second=num_requests / duration if duration > 0 else 0,
+            avg_response_time_ms=statistics.mean(response_times),
+            min_response_time_ms=min(response_times),
+            max_response_time_ms=max(response_times),
+            p50_response_time_ms=statistics.median(response_times),
+            p95_response_time_ms=self._percentile(response_times, 95),
+            p99_response_time_ms=self._percentile(response_times, 99),
+            error_types=dict(errors)
+        )
+
+        self.results.append(result)
+        self._print_result(result)
+        return result
+
+    async def run_test_with_varying_wms(self, test_name: str, base_wms_url: str, layer_name: str,
+                                         bbox: str = "-180,-90,180,90", width: int = 512, height: int = 512,
+                                         num_requests: int = None, timeout: int = None) -> TestResult:
+        """
+        Run a WMS GetMap stress test using actual times from S3 for this layer.
+        Each request will use an actual timestamp that exists in the S3 data.
+
+        Args:
+            test_name: Name of the test
+            base_wms_url: Base WMS URL (e.g., .../wms.cgi)
+            layer_name: Layer name to get times for
+            bbox: Bounding box (default: "-180,-90,180,90")
+            width: Image width (default: 512)
+            height: Image height (default: 512)
+            num_requests: Number of requests to make
+            timeout: Timeout in seconds
+        """
+        if num_requests is None:
+            num_requests = self.config.num_requests
+        if timeout is None:
+            timeout = self.config.timeout
+
+        # Get actual times from S3 for this layer
+        time_strings = self.get_layer_times(layer_name, count=num_requests)
+
+        if not time_strings:
+            print(f"Warning: No time data available for {layer_name}. Skipping test.")
+            return None
+
+        print(f"\n{'='*60}")
+        print(f"Running test: {test_name}")
+        print(f"Layer: {layer_name}")
+        print(f"Using {len(time_strings)} actual times from S3")
+        print(f"Time range: {min(time_strings)} to {max(time_strings)}")
+        print(f"Requests: {num_requests}, Concurrency: {self.config.concurrency}, Timeout: {timeout}s")
+        print(f"{'='*60}")
+
+        semaphore = asyncio.Semaphore(self.config.concurrency)
+        response_times = []
+        statuses = []
+        errors = defaultdict(int)
+
+        start_time = time.time()
+
+        # Create a new session with the specified timeout
+        connector = aiohttp.TCPConnector(limit=self.config.concurrency * 2)
+        client_timeout = aiohttp.ClientTimeout(total=timeout)
+
+        async with aiohttp.ClientSession(connector=connector, timeout=client_timeout) as session:
+            # Create WMS URLs with different times
+            # WMS format: {base_url}?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&LAYERS={layer}&STYLES=&FORMAT=image/png&TRANSPARENT=true&HEIGHT={height}&WIDTH={width}&CRS=EPSG:4326&BBOX={bbox}&TIME={time}
+            urls = []
+            for i in range(num_requests):
+                # Cycle through available times
+                time_str = time_strings[i % len(time_strings)]
+                url = f"{base_wms_url}?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&LAYERS={layer_name}&STYLES=&FORMAT=image/png&TRANSPARENT=true&HEIGHT={height}&WIDTH={width}&CRS=EPSG:4326&BBOX={bbox}&TIME={time_str}"
+                urls.append(url)
+
+            tasks = [self.fetch_url(session, url, semaphore) for url in urls]
+
             completed = 0
             for coro in asyncio.as_completed(tasks):
                 response_time, status, error, returned_url = await coro
@@ -335,10 +550,17 @@ class OnEarthStressTester:
 
         # GetCapabilities responses are large and can take time, especially under load
         await self.run_test(
-            "WMTS GetCapabilities (EPSG:4326 All)",
+            "WMTS GetCapabilities (EPSG:4326 Best)",
             f"{UAT_BASE_URL}/wmts/epsg4326/best/wmts.cgi?SERVICE=WMTS&request=GetCapabilities",
             timeout=60  # Increase timeout for large GetCapabilities response
         )
+
+        await self.run_test(
+            "WMTS GetCapabilities (EPSG:3857 All)",
+            f"{UAT_BASE_URL}/wmts/epsg3857/all/wmts.cgi?SERVICE=WMTS&request=GetCapabilities",
+            timeout=60  # Increase timeout for large GetCapabilities response
+        )
+
 
         await self.run_test(
             "WMS GetCapabilities (EPSG:4326 Best)",
@@ -405,6 +627,59 @@ class OnEarthStressTester:
             num_requests=tile_requests
         )
 
+        await self.run_test_with_varying_times(
+            "Direct Tile - MODIS AOD (varying times)",
+            f"{UAT_BASE_URL}/wmts/epsg4326/best/MODIS_Combined_Value_Added_AOD/default",
+            "MODIS_Combined_Value_Added_AOD",
+            "2km",
+            num_requests=tile_requests
+        )
+
+        # ===== Direct Tile Tests with Varying Tiles =====
+        print("\n" + "="*60)
+        print("DIRECT TILE TESTS WITH VARYING TILES AND TIMES")
+        print("="*60)
+
+        await self.run_test_with_varying_tiles(
+            "Direct Tile - MODIS AOD (varying tiles, zoom 0)",
+            f"{UAT_BASE_URL}/wmts/epsg4326/best/MODIS_Combined_Value_Added_AOD/default",
+            "MODIS_Combined_Value_Added_AOD",
+            "2km",
+            zoom_level=0,
+            num_requests=tile_requests
+        )
+
+        await self.run_test_with_varying_tiles(
+            "Direct Tile - MODIS AOD (varying tiles, zoom 1)",
+            f"{UAT_BASE_URL}/wmts/epsg4326/best/MODIS_Combined_Value_Added_AOD/default",
+            "MODIS_Combined_Value_Added_AOD",
+            "2km",
+            zoom_level=1,
+            num_requests=tile_requests
+        )
+
+        # ===== EPSG:3857 (Web Mercator) Tests =====
+        print("\n" + "="*60)
+        print("EPSG:3857 (WEB MERCATOR) TESTS")
+        print("="*60)
+
+        await self.run_test_with_varying_times(
+            "Direct Tile - MODIS AOD EPSG:3857 (varying times)",
+            f"{UAT_BASE_URL}/wmts/epsg3857/best/MODIS_Combined_Value_Added_AOD/default",
+            "MODIS_Combined_Value_Added_AOD",
+            "GoogleMapsCompatible_Level6",
+            num_requests=tile_requests
+        )
+
+        await self.run_test_with_varying_tiles(
+            "Direct Tile - MODIS AOD EPSG:3857 (varying tiles, zoom 1)",
+            f"{UAT_BASE_URL}/wmts/epsg3857/best/MODIS_Combined_Value_Added_AOD/default",
+            "MODIS_Combined_Value_Added_AOD",
+            "GoogleMapsCompatible_Level6",
+            zoom_level=1,
+            num_requests=tile_requests
+        )
+
         # ===== WMS GetMap Tests =====
         print("\n" + "="*60)
         print("WMS GETMAP TESTS")
@@ -416,18 +691,15 @@ class OnEarthStressTester:
             num_requests=tile_requests
         )
 
-        await self.run_test(
-            "WMS GetMap - BlueMarble PNG (different bbox)",
-            f"{UAT_BASE_URL}/wms/epsg4326/best/wms.cgi?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&LAYERS=BlueMarble_NextGeneration&STYLES=&FORMAT=image/png&TRANSPARENT=true&HEIGHT=256&WIDTH=256&CRS=EPSG:4326&BBOX=-45,-45,45,45",
+        await self.run_test_with_varying_wms(
+            "WMS GetMap - MODIS AOD (varying times)",
+            f"{UAT_BASE_URL}/wms/epsg4326/best/wms.cgi",
+            "MODIS_Combined_Value_Added_AOD",
+            bbox="-180,-90,180,90",
+            width=512,
+            height=512,
             num_requests=tile_requests
         )
-
-        # ===== Multi-Projection Tests =====
-        # TODO: Enable when we identify correct layers and tilematrixsets for each projection
-        print("\n" + "="*60)
-        print("MULTI-PROJECTION TESTS - TODO")
-        print("Need to verify available layers per projection")
-        print("="*60)
 
     def print_summary(self):
         """Print summary of all tests"""
@@ -473,14 +745,14 @@ async def main():
     parser.add_argument(
         "--requests",
         type=int,
-        default=100,
-        help="Number of requests per test (default: 100)"
+        default=1000,
+        help="Number of requests per test (default: 1000)"
     )
     parser.add_argument(
         "--concurrency",
         type=int,
-        default=10,
-        help="Number of concurrent connections (default: 10)"
+        default=50,
+        help="Number of concurrent connections (default: 50)"
     )
     parser.add_argument(
         "--timeout",

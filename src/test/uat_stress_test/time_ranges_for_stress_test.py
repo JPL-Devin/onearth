@@ -93,10 +93,6 @@ def get_layer_time_range(bucket_name, layer_prefix):
                 key = obj['Key']
                 total_objects += 1
 
-                # Progress indicator
-                if total_objects % 5000 == 0:
-                    print(f"  Processed {total_objects:,} objects...")
-
                 # Extract time information
                 time_info = extract_time_from_path(key)
                 if time_info:
@@ -131,7 +127,8 @@ def main():
     # Specific layers to extract time ranges for
     target_layers = [
         'TEMPO_L2_Ozone_Cloud_Fraction_Granule_v3_STD',
-        'SMAP_L4_Analyzed_Root_Zone_Soil_Moisture_v7_STD'
+        'SMAP_L4_Analyzed_Root_Zone_Soil_Moisture_v7_STD',
+        'MODIS_Combined_Value_Added_AOD'
     ]
 
     print("=" * 80)
