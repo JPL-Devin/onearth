@@ -128,7 +128,8 @@ def main():
     target_layers = [
         'TEMPO_L2_Ozone_Cloud_Fraction_Granule_v3_STD',
         'SMAP_L4_Analyzed_Root_Zone_Soil_Moisture_v7_STD',
-        'MODIS_Combined_Value_Added_AOD'
+        'MODIS_Combined_Value_Added_AOD',
+        'VIIRS_NOAA20_Thermal_Anomalies_375m_All_v2_NRT'
     ]
 
     print("=" * 80)

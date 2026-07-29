@@ -592,6 +592,21 @@ class OnEarthStressTester:
             num_requests=tile_requests
         )
 
+        # ===== Vector Layer Tests =====
+        print("\n" + "="*60)
+        print("VECTOR LAYER TESTS")
+        print("="*60)
+
+        await self.run_test_with_varying_wms(
+            "Vector Layer - Thermal Anomalies (varying times)",
+            f"{UAT_BASE_URL}/wms/epsg4326/nrt/wms.cgi",
+            "VIIRS_NOAA20_Thermal_Anomalies_375m_All_v2_NRT",
+            bbox="-180,-90,180,90",
+            width=512,
+            height=512,
+            num_requests=tile_requests
+        )
+
     def print_summary(self):
         """Print summary of all tests"""
         print(f"\n{'='*60}")
