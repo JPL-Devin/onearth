@@ -392,6 +392,93 @@ Tests legends in horizontal and vertical formats as PNGs and SVGs using various 
 14. Deleting all configs from a directory when syncing with an empty S3 bucket (not in use: commented out)
 15. Deleting all IDX files from a directory when syncing with an empty S3 bucket (not in use: commented out)
 
+## mod_wmts_wrapper Tests
+
+### REST URL Validation
+
+Tests that malformed REST-style WMTS tile requests (`LAYER/STYLE/TIME/TMS/Z/X/Y.ext`) return the correct WMTS error response.
+
+1. **`test_REST_bad_layer`** -- Returns `LAYER does not exist` for an unknown layer name
+2. **`test_REST_bad_style`** -- Returns `STYLE is invalid for LAYER` for an unknown style name
+3. **`test_REST_bad_tilematrixset`** -- Returns `TILEMATRIXSET is invalid for LAYER` when a valid date is provided but the TMS name is unrecognized
+4. **`test_REST_missing_time_returns_tms_error`** -- Returns `TILEMATRIXSET is invalid for LAYER` when the TIME parameter is omitted entirely from a date-enabled layer URL (e.g., `LAYER/default/bad_tms/Z/X/Y.jpg` instead of `LAYER/default/TIME/TMS/Z/X/Y.jpg`)
+5. **`test_REST_malformed_time_returns_time_error`** -- Returns `Invalid time format, must be YYYY-MM-DD or YYYY-MM-DDThh:mm:ssZ` when a TIME value is present but does not match the expected format (e.g., `2020-01-6` with a single-digit day)
+6. **`test_REST_invalid_tilematrix`** -- Returns `TILEMATRIX is out of range` for a Z value exceeding the layer maximum
+7. **`test_REST_bad_tilematrix_value`** -- Returns `TILEMATRIX is not a valid integer` for a non-integer Z value
+8. **`test_REST_bad_tilematrix_range`** -- Returns `TILEMATRIX is out of range` for a Z value exceeding the layer maximum
+9. **`test_REST_row_out_of_range`** -- Returns `TILEROW is out of range` for a row value exceeding the layer maximum
+10. **`test_REST_bad_tilerow_value`** -- Returns `TILEROW is not a valid integer` for a non-integer row value
+11. **`test_REST_tilecol_out_of_range`** -- Returns `TILECOL is out of range` for a column value exceeding the layer maximum
+12. **`test_REST_bad_tilecol_value`** -- Returns `TILECOL is not a valid integer` for a non-integer column value
+13. **`test_REST_bad_format`** -- Returns `FORMAT is invalid for LAYER` for an unrecognized file extension
+14. **`test_REST_bad_url`** -- Returns `LAYER does not exist` for a structurally invalid URL (too few path segments)
+
+### KvP (Key-Value Pair) Validation
+
+Tests that KvP-style WMTS requests with missing or invalid parameters return the correct WMTS error response.
+
+**Missing parameters:**
+
+1. **`test_kvp_missing_request`** -- Returns `Missing REQUEST parameter` when REQUEST is absent
+2. **`test_kvp_missing_service`** -- Returns `Missing SERVICE parameter` when SERVICE is absent
+3. **`test_kvp_missing_version`** -- Returns `Missing VERSION parameter` when VERSION is absent
+4. **`test_kvp_missing_layer`** -- Returns `Missing LAYER parameter` when LAYER is absent
+5. **`test_kvp_missing_format`** -- Returns `Missing FORMAT parameter` when FORMAT is absent
+6. **`test_kvp_missing_tilematrixset`** -- Returns `Missing TILEMATRIXSET parameter` when TILEMATRIXSET is absent
+7. **`test_kvp_missing_tilematrix`** -- Returns `Missing TILEMATRIX parameter` when TILEMATRIX is absent
+8. **`test_kvp_missing_tilerow`** -- Returns `Missing TILEROW parameter` when TILEROW is absent
+9. **`test_kvp_missing_tilecol`** -- Returns `Missing TILECOL parameter` when TILECOL is absent
+
+**Invalid parameters:**
+
+10. **`test_kvp_bad_service`** -- Returns `Unrecognized service` for an unrecognized SERVICE value
+11. **`test_kvp_bad_request`** -- Returns `The request type is not supported` (HTTP 501) for an unsupported REQUEST operation
+12. **`test_kvp_bad_version`** -- Returns `VERSION is invalid` for an unrecognized VERSION value
+13. **`test_kvp_bad_layer`** -- Returns `LAYER does not exist` for an unknown LAYER value
+14. **`test_kvp_bad_style`** -- Returns `STYLE is invalid for LAYER` for an unrecognized STYLE value
+15. **`test_kvp_bad_format`** -- Returns `FORMAT is invalid for LAYER` for a format not supported by the layer
+16. **`test_kvp_bad_tilematrixset`** -- Returns `TILEMATRIXSET is invalid for LAYER` for an unrecognized TILEMATRIXSET value
+17. **`test_kvp_bad_tilematrix_value`** -- Returns `TILEMATRIX is not a valid integer` for a non-integer TILEMATRIX value
+18. **`test_kvp_bad_tilerow_value`** -- Returns `TILEROW is not a valid integer` for a non-integer TILEROW value
+19. **`test_kvp_bad_tilecol_value`** -- Returns `TILECOL is not a valid integer` for a non-integer TILECOL value
+20. **`test_kvp_invalid_tilematrix_`** -- Returns `TILEMATRIX is out of range` for a TILEMATRIX value exceeding the layer maximum
+21. **`test_kvp_tilerow_out_of_range`** -- Returns `TILEROW is out of range` for a TILEROW value exceeding the layer maximum
+22. **`test_kvp_tilecol_out_of_range`** -- Returns `TILECOL is out of range` for a TILECOL value exceeding the layer maximum
+23. **`test_kvp_bad_time_format`** -- Returns `Invalid time format, must be YYYY-MM-DD or YYYY-MM-DDThh:mm:ssZ` for a malformed TIME value
+24. **`test_kvp_bad_time_out_of_range`** -- Returns HTTP 404 when a valid TIME value falls outside the layer's available date range
+
+### Tile Handling
+
+Tests that valid tile requests return the expected tile data and response headers.
+
+**mod_mrf tiles:**
+
+1. **`test_mod_mrf_nodate_tile`** -- Requests a tile from a static (no-date) MRF layer and verifies the tile contents
+2. **`test_mod_mrf_date_tile_default`** -- Requests a tile using `time=default` from a date-enabled MRF layer and verifies the tile contents
+3. **`test_mod_mrf_date_tile`** -- Requests tiles from a date-enabled MRF layer using specific dates (`2012-01-01`, `2015-01-01`) and verifies tile contents
+4. **`test_mod_mrf_datetime_milliseconds_tile`** -- Requests tiles via REST using full datetime strings with milliseconds (e.g., `2012-01-01T12:00:00.000Z`); verifies milliseconds are stripped and correct tile is returned
+5. **`test_kvp_mod_mrf_datetime_milliseconds_tile`** -- Same as above but using KvP request format
+6. **`test_mod_mrf_nodate_tile_headers`** -- Verifies that response headers for a no-date layer contain correct `Layer-Identifier` and `Layer-Time` values
+7. **`test_mod_mrf_defaultdate_tile_headers`** -- Verifies response headers when `time=default`; `Layer-Time-Actual` should be the most recent available date
+8. **`test_mod_mrf_date_tile_headers`** -- Verifies response headers for a specific date request; `Layer-Time-Request` reflects the requested date, `Layer-Time-Actual` reflects the snapped date
+9. **`test_mod_mrf_best_tile_headers`** -- Verifies response headers when a "best available" layer is used; `Layer-Identifier-Actual` reflects the best-layer name
+10. **`test_mod_mrf_date_tile_yeardir`** -- Requests tiles from a date-enabled MRF layer using a year-directory (`YYYY/`) storage layout and verifies tile contents
+11. **`test_mod_mrf_date_tile_daydir`** -- Requests tiles from a date-enabled MRF layer using a day-of-year directory (`YYYY/DDD/`) storage layout and verifies tile contents
+12. **`test_mod_mrf_date_out_of_range`** -- Verifies that requesting a tile with a date outside the layer's available range returns HTTP 404
+
+**mod_reproject tiles:**
+
+13. **`test_mod_reproject_nodate_tile`** -- Requests a tile from a static (no-date) reprojection layer and verifies tile contents
+14. **`test_mod_reproject_default_tile`** -- Requests a tile using `time=default` from a date-enabled reprojection layer and verifies tile contents
+15. **`test_mod_reproject_date_tile`** -- Requests tiles from a date-enabled reprojection layer using specific dates and verifies tile contents
+
+**ZenJPEG and Brunsli tiles:**
+
+16. **`test_zenjpeg_source_mrf_date_yeardir_tile`** -- Requests a tile served from a ZenJPEG source MRF with a year-directory layout and verifies tile contents
+17. **`test_zenjpeg_convert_mrf_date_yeardir_tile`** -- Requests a tile from a ZenJPEG-to-PNG converted MRF with a year-directory layout and verifies tile contents
+18. **`test_brunsli_mrf_date_yeardir_tile_REST`** -- Requests a Brunsli-compressed MRF tile via REST with a year-directory layout and verifies tile contents
+19. **`test_brunsli_mrf_date_yeardir_tile_kvp`** -- Requests a Brunsli-compressed MRF tile via KvP (with a millisecond timestamp) and verifies tile contents
+
 ## WMTS/TWMS Helper Scripts Tests:
 
 1. Converting from a Tiled WMS box to WMTS tile using `twmsbox2wmts.py`

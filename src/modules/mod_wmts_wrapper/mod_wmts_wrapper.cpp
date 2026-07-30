@@ -688,6 +688,17 @@ static int pre_hook(request_rec *r)
         if (datetime_str == NULL 
             || ap_regexec(cfg->date_regexp, datetime_str, 0, NULL, 0) == AP_REG_NOMATCH 
             && apr_strnatcasecmp(datetime_str, "default") != 0) {
+            // The time parameter occupies position (nelts-5) in r->uri.
+            // If time was omitted, that slot holds the style name ("default") instead.
+            // Use this to distinguish a missing time with a TMS error from a malformed time.
+            apr_array_header_t *uri_tokens = tokenize(r->pool, r->uri, '/');
+            const char *time_slot = uri_tokens->nelts >= 5
+                ? (const char *)APR_ARRAY_IDX(uri_tokens, uri_tokens->nelts - 5, const char *)
+                : NULL;
+            if (time_slot && apr_strnatcasecmp(time_slot, "default") == 0) {
+                wmts_errors[errors++] = wmts_make_error(400,"InvalidParameterValue","TILEMATRIXSET", "TILEMATRIXSET is invalid for LAYER");
+                return wmts_return_all_errors(r, errors, wmts_errors);
+            }
             wmts_errors[errors++] = wmts_make_error(400,"InvalidParameterValue","TIME", "Invalid time format, must be YYYY-MM-DD or YYYY-MM-DDThh:mm:ssZ");
         }
 
