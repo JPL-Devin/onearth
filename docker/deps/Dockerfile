@@ -24,14 +24,14 @@ RUN dnf -y update && \
         libcurl-devel-8.12.1 \
         libjpeg-turbo-devel-3.0.2 \
         libxml2-devel-2.12.5 \
-        mod_ssl-1:2.4.63 \
-        openssl-devel-1:3.5.1 \
+        mod_ssl-1:2.4.63-13.el10_2.1 \
+        openssl-devel-1:3.5.5 \
         luarocks-3.9.2 \
-        redis-7.2.4 \
+        valkey-compat-redis-8.0.7 \
         cronie-1.7.0 \
         logrotate-3.22.0 \
-        python3-devel-3.12.12 \
-        cmake-3.30.5 \
+        python3-devel-3.12.13 \
+        cmake-3.31.8 \
         parallel && \
     dnf clean all
 
@@ -40,13 +40,13 @@ RUN echo 'will cite' | parallel --citation || true
 
 # Install supercronic
 WORKDIR /tmp
-RUN wget https://go.dev/dl/go1.26.1.linux-amd64.tar.gz && \
-    tar xf go1.26.1.linux-amd64.tar.gz && \
+RUN wget https://go.dev/dl/go1.26.5.linux-amd64.tar.gz && \
+    tar xf go1.26.5.linux-amd64.tar.gz && \
     mv go /usr/local/ && \
     ln -s /usr/local/go/bin/go /usr/local/bin/go && \
-    wget https://github.com/aptible/supercronic/archive/refs/tags/v0.2.44.tar.gz && \
-    tar xf v0.2.44.tar.gz && \
-    cd supercronic-0.2.44 && \
+    wget https://github.com/aptible/supercronic/archive/refs/tags/v0.2.46.tar.gz && \
+    tar xf v0.2.46.tar.gz && \
+    cd supercronic-0.2.46 && \
     sed -i 's/386 arm arm64//g' build.sh && \
     go mod tidy && \
     go mod vendor && \
@@ -75,6 +75,8 @@ RUN git clone --depth=1 https://github.com/google/brunsli.git && \
     cmake -DCMAKE_PREFIX_PATH=/usr/local/ -DCMAKE_INSTALL_PREFIX=/usr/local/ -DCMAKE_INSTALL_LIBDIR=lib -DCMAKE_BUILD_TYPE=Release -B out && \
     cmake --build out --config Release && \
     cd out && make && make install && \
+    cp /tmp/brunsli/out/artifacts/cbrunsli /usr/local/bin/ && \
+    cp /tmp/brunsli/out/artifacts/dbrunsli /usr/local/bin/ && \
     export LD_LIBRARY_PATH=:/usr/local/lib && \
     ldconfig && \
     cd /tmp/ && rm -rf /tmp/brunsli
@@ -83,9 +85,9 @@ RUN git clone --depth=1 https://github.com/google/brunsli.git && \
 WORKDIR /tmp
 RUN dnf install -y yum-utils-4.7.0 rpm-build-4.19.1.1 && \
     dnf clean all && \
-    yumdownloader --source httpd-2.4.63-4.el10_1.3.x86_64 && \
+    yumdownloader --source httpd-2.4.63-13.el10_2.4.x86_64 && \
     HOME="/tmp" rpm -ivh httpd-*.src.rpm && \
-    yum-builddep -y httpd-2.4.63-4.el10_1.3.x86_64
+    yum-builddep -y /tmp/rpmbuild/SPECS/httpd.spec
 
 # Copy OnEarth to home directory
 RUN mkdir -p /home/oe2
