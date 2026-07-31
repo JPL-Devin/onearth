@@ -1,5 +1,5 @@
 # This Dockerfile must be run from source root
-FROM nasagibs/onearth-deps:2.9.8
+FROM nasagibs/onearth-deps::2.9.8
 
 ARG MRF_VERSION=3.0.3
 ARG ALMALINUX_VERSION=10
