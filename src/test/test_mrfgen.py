@@ -2384,6 +2384,143 @@ class TestMRFGeneration_opera_antimeridian_crossing(unittest.TestCase):
             print("Leaving test results in : " + self.staging_area)
 
 
+class TestMRFGeneration_zenjpeg_grayscale_alpha(unittest.TestCase):
+    """Test ZenJPEG generation with grayscale+alpha input (2-band TIFF)."""
+
+    def setUp(self):
+        import numpy as np
+        
+        testdata_path = os.path.join(os.getcwd(), 'mrfgen_files')
+        self.staging_area = os.path.join(os.getcwd(), 'mrfgen_test_data_grayscale_alpha')
+        test_config = os.path.join(testdata_path, "mrfgen_test_config20.xml")
+        
+        # Make empty dirs for mrfgen output
+        mrfgen_dirs = ('input_dir', 'output_dir', 'working_dir', 'logfile_dir')
+        [make_dir_tree(os.path.join(self.staging_area, path)) for path in mrfgen_dirs]
+        
+        # Copy empty output tile
+        shutil.copytree(os.path.join(testdata_path, 'empty_tiles'), os.path.join(self.staging_area, 'empty_tiles'))
+        
+        # Create a grayscale+alpha TIFF from existing RGB+Alpha test file
+        source_tiff = os.path.join(testdata_path, 'jpng/GOES-East_B13_LL_v0_NRT_2021100_00:00.tiff')
+        self.input_tiff = os.path.join(self.staging_area, 'input_dir/TEST_GRAYSCALE_ALPHA_2021100_0000.tiff')
+        
+        # Extract red band + alpha to create grayscale+alpha TIFF
+        src_ds = gdal.Open(source_tiff)
+        red = src_ds.GetRasterBand(1).ReadAsArray()
+        alpha = src_ds.GetRasterBand(4).ReadAsArray()
+        
+        # Create output 2-band TIFF (grayscale + alpha)
+        driver = gdal.GetDriverByName('GTiff')
+        out_ds = driver.Create(self.input_tiff, src_ds.RasterXSize, src_ds.RasterYSize, 2, gdal.GDT_Byte)
+        out_ds.SetGeoTransform(src_ds.GetGeoTransform())
+        out_ds.SetProjection(src_ds.GetProjection())
+        
+        # Write red band as grayscale
+        band1 = out_ds.GetRasterBand(1)
+        band1.WriteArray(red)
+        band1.SetColorInterpretation(gdal.GCI_GrayIndex)
+        
+        # Write alpha band (set as Undefined to match real GOES data)
+        band2 = out_ds.GetRasterBand(2)
+        band2.WriteArray(alpha)
+        band2.SetColorInterpretation(gdal.GCI_Undefined)
+        
+        out_ds.FlushCache()
+        out_ds = None
+        src_ds = None
+        
+        self.output_mrf = os.path.join(self.staging_area, "output_dir/TEST_GRAYSCALE_ALPHA_ZEN_2021100000000.mrf")
+        self.output_pjg = os.path.join(self.staging_area, "output_dir/TEST_GRAYSCALE_ALPHA_ZEN_2021100000000.pjg")
+        self.output_idx = os.path.join(self.staging_area, "output_dir/TEST_GRAYSCALE_ALPHA_ZEN_2021100000000.idx")
+        self.output_img = os.path.join(self.staging_area, "output_dir/TEST_GRAYSCALE_ALPHA_ZEN_2021100000000.jpg")
+        self.compare_img = os.path.join(testdata_path, "test_comp20.jpg")
+        
+        # Debug: verify input file was created
+        if DEBUG:
+            print(f"Input TIFF created: {os.path.isfile(self.input_tiff)}")
+            print(f"Input TIFF path: {self.input_tiff}")
+            if os.path.isfile(self.input_tiff):
+                import subprocess
+                result = subprocess.run(['gdalinfo', self.input_tiff], capture_output=True, text=True)
+                print(f"TIFF info: {result.stdout[:500]}")
+        
+        # Generate MRF
+        run_command("mrfgen -c " + test_config, show_output=True)
+        
+        # Extract a tile from the MRF for comparison
+        run_command('mrf_read.py --input ' + self.output_mrf + ' --output ' + self.output_img + ' --tilematrix 2 --tilecol 1 --tilerow 0', show_output=DEBUG)
+    
+    def test_generate_grayscale_alpha_mrf(self):
+        """Test that grayscale+alpha input creates a 1-band MRF with Zen masking."""
+        # Check MRF generation succeeded
+        if not os.path.isfile(self.output_mrf):
+            # Print log file if generation failed
+            log_dir = os.path.join(self.staging_area, "logfile_dir")
+            if os.path.exists(log_dir):
+                import glob
+                log_files = glob.glob(os.path.join(log_dir, "*.log"))
+                if log_files:
+                    with open(log_files[0], 'r') as f:
+                        print(f"\n=== Log file content ===\n{f.read()}")
+        self.assertTrue(os.path.isfile(self.output_mrf), "MRF generation failed")
+        
+        # Read MRF
+        dataset = gdal.Open(self.output_mrf)
+        driver = dataset.GetDriver()
+        if DEBUG:
+            print('Driver:', str(driver.LongName))
+        self.assertEqual(str(driver.LongName), "Meta Raster Format", "Driver is not Meta Raster Format")
+        
+        # Check files exist
+        if DEBUG:
+            print('Files: {0}, {1}'.format(self.output_pjg, self.output_idx))
+        self.assertTrue(os.path.isfile(self.output_pjg), "MRF PJG generation failed")
+        self.assertTrue(os.path.isfile(self.output_idx), "MRF IDX generation failed")
+        
+        # Check size
+        if DEBUG:
+            print('Size: ',dataset.RasterXSize,'x',dataset.RasterYSize, 'x',dataset.RasterCount)
+        self.assertEqual(dataset.RasterXSize, 2048, "Size does not match")
+        self.assertEqual(dataset.RasterYSize, 1024, "Size does not match")
+        
+        # CRITICAL: Check that it's 1-band (grayscale with Zen masking), not 2-band
+        self.assertEqual(dataset.RasterCount, 1, "Should be 1-band grayscale with Zen masking, not 2-band")
+        
+        # Check band color interpretation
+        band = dataset.GetRasterBand(1)
+        if DEBUG:
+            print('Band 1 ColorInterp:', gdal.GetColorInterpretationName(band.GetColorInterpretation()))
+        self.assertEqual(band.GetColorInterpretation(), gdal.GCI_GrayIndex, "Band should be grayscale")
+        
+        # Check overviews
+        if DEBUG:
+            print('Overviews:', band.GetOverviewCount())
+        self.assertEqual(band.GetOverviewCount(), 2, "Overview count does not match")
+        
+        # Read MRF XML to verify it's 1-channel
+        with open(self.output_mrf, 'r') as f:
+            mrf_content = f.read()
+            if DEBUG:
+                print('MRF content:', mrf_content)
+            self.assertIn('<Size x="2048" y="1024" c="1"', mrf_content, "MRF should have c=1 (1 channel)")
+            self.assertIn('<PageSize x="512" y="512" c="1"', mrf_content, "MRF PageSize should have c=1")
+        
+        # Check extracted tile image
+        self.assertTrue(os.path.isfile(self.output_img), "Tile extraction failed")
+        
+        # Compare with reference image
+        if DEBUG:
+            print("Comparing: " + self.output_img + " to " + self.compare_img)
+        self.assertTrue(filecmp.cmp(self.output_img, self.compare_img), "Extracted tile does not match reference image")
+    
+    def tearDown(self):
+        if not SAVE_RESULTS:
+            shutil.rmtree(self.staging_area)
+        else:
+            print("Leaving test results in : " + self.staging_area)
+
+
 if __name__ == '__main__':
     # Parse options before running tests
     available_tests = {
@@ -2411,6 +2548,7 @@ if __name__ == '__main__':
         'Angstrom_Exponent': TestMRFGeneration_Angstrom_Exponent,
         'background': TestMRFGeneration_background,
         'opera_antimeridian_crossing': TestMRFGeneration_opera_antimeridian_crossing,
+        'mrf_generation_zenjpeg_grayscale_alpha': TestMRFGeneration_zenjpeg_grayscale_alpha
     }
     test_help_text = 'Specify a specific test to run. Available tests: {0}'.format(list(available_tests.keys()))
     parser = OptionParser()

@@ -5,6 +5,7 @@ This directory contains files and scripts to test various aspects of OnEarth. Th
 
 * `test_colormap2vrt.py` -- tests `colormap2vrt.py`
 * `test_colormap_html_sld.py` -- tests scripts for converting colormaps to HTML and SLD
+* `test_convert_mrf.py` -- tests MRF conversion tool (`convert_mrf.py`)
 * `test_gc_service.py` -- tests the OnEarth GetCapabilities Service
 * `test_generate_empty_tile.py` -- tests empty tile generation with `oe_generate_empty_tile.py`
 * `test_legends.py` -- tests the oe_generate_legend tool with GIBS colormaps
@@ -202,22 +203,32 @@ Each test script will output a JUnit XML results file. By default, these files a
 5. Test `recalculate_best` to recalculate an entire `:best` key
 
 ## mrfgen Tests:
-1. Global geographic PNG-MRF
+1. **Paletted PNG-MRF** (`TestMRFGeneration_paletted`)
 	* Global input image
 	* Geographic projection
 	* Paletted PNG input image
 	* Paletted MRF-PNG output image
-2. Tiled polar north JPEG-MRF
+2. **Paletted PNG-MRF with nearest neighbor** (`TestMRFGeneration_paletted_nnb`)
+	* Same as test 1 but with nearest neighbor resampling
+3. **Non-paletted PNG-MRF** (`TestMRFGeneration_nonpaletted`)
+	* Global input image
+	* Geographic projection
+	* Non-paletted PNG output
+4. **Polar JPEG-MRF** (`TestMRFGeneration_polar`)
 	* Tiled input images
 	* Stereographic Polar North projection
 	* JPEG input images
 	* MRF-JPEG output image
-3. Global web mercator JPEG-MRF
+5. **Polar JPEG-MRF with averaging** (`TestMRFGeneration_polar_avg`)
+	* Same as test 4 but with average resampling
+6. **Web Mercator JPEG-MRF** (`TestMRFGeneration_mercator`)
 	* Global input image in geographic projection
 	* Reprojection to web mercator
-4. Geographic PNG-MRF using granule input files
+	* JPEG output
+7. **Web Mercator JPEG-MRF with averaging** (`TestMRFGeneration_mercator_avg`)
+	* Same as test 6 but with average resampling
+8. **Geographic PNG-MRF using granule input files** (`TestMRFGeneration_granule`)
  	* Granule input images with global coverage
- 	* Input images cross antimeridian
 	* Native geographic projection
 	* Generate initial empty MRF with nocopy option
 	* Insert into existing MRF
@@ -228,17 +239,48 @@ Each test script will output a JUnit XML results file. By default, these files a
 		* Add image to new z-level
 		* Add image to existing z-level
 		* Add image to multiple z-levels
-5. Web Mercator PNG-MRF using granule input files
+9. **Web Mercator PNG-MRF using granule input files** (`TestMRFGeneration_granule_webmerc`)
 	* Granule input images with partial coverage
 	* Reprojection to web mercator
 	* No blending of input images
 	* Automatic creation of empty MRF
-6. Tiled geographic JPEG-MRF using tiled input files with z-level and time
+10. **Tiled geographic JPEG-MRF with z-level and time** (`TestMRFGeneration_tiled_z`)
 	* Tiled input images
 	* RGBA TIFF input images
 	* Use single z-level
 	* Use time (hh:mm:ss)
 	* Use zdb lookup
+11. **Non-paletted with colormap** (`TestMRFGeneration_nonpaletted_colormap`)
+	* Non-paletted input with colormap application
+12. **Email notification** (`TestMRFGeneration_email_notification`)
+	* Tests email notification functionality
+13. **Mixed projections** (`TestMRFGeneration_mixed_projections`)
+	* Input images with different projections
+14. **Antimeridian crossing** (`TestMRFGeneration_antimeridian_crossing`)
+	* Input images that cross the antimeridian
+15. **JPNG (JPEG+PNG) MRF** (`TestMRFGeneration_jpng`)
+	* Mixed JPEG and PNG input handling
+16. **ZenJPEG MRF** (`TestMRFGeneration_zenjpeg`)
+	* ZenJPEG compression (JPEG with Zen masking)
+	* RGB+Alpha input
+17. **Brunsli compression enabled** (`TestMRFGeneration_brunsli_on`)
+	* Brunsli-compressed JPEG output
+18. **Brunsli compression disabled** (`TestMRFGeneration_brunsli_off`)
+	* Standard JPEG output (Brunsli explicitly disabled)
+19. **ZenJPEG with Brunsli** (`TestMRFGeneration_zenjpeg_brunsli`)
+	* Combined ZenJPEG and Brunsli compression
+20. **Default nocopy behavior** (`TestMRFGeneration_defaultnocopy`)
+	* Tests default nocopy MRF generation
+21. **Angstrom Exponent layer** (`TestMRFGeneration_Angstrom_Exponent`)
+	* Specific layer type testing
+22. **Background fill** (`TestMRFGeneration_background`)
+	* Tests background fill functionality
+23. **RGBA to Paletted conversion** (`TestRGBA2Pal`)
+	* Converts RGBA to paletted format
+24. **OPERA antimeridian crossing** (`TestMRFGeneration_opera_antimeridian_crossing`)
+	* OPERA-specific antimeridian handling
+25. **ZenJPEG grayscale+alpha** (`TestMRFGeneration_zenjpeg_grayscale_alpha`)
+	* Tests grayscale+alpha (2-band) TIFF input
 
 ## RGB PNG To PAL PNG Tests:
 1. Large image
@@ -251,6 +293,57 @@ Each test script will output a JUnit XML results file. By default, these files a
 8. Small image with mismatched transparency
 9. Small image with invalid fill value
 10. GeoTIFF image
+
+## MRF Conversion Tests (`convert_mrf.py`):
+
+Tests the MRF conversion tool for converting between PNG, standard JPEG (ZenJPEG), and Brunsli-compressed JPEG formats.
+
+**Test Data:**
+- Source MRF: `convert_mrf_files/source_png_mrf/` - Paletted PNG MRF with overviews
+- Expected outputs: `convert_mrf_files/expected/` - Reference MRF metadata files for validation
+
+**Local Conversion Tests:**
+1. **PNG → ZenJPEG (standard JPEG)**: Fast conversion using `gdal_translate`
+   - Verifies data and index checksums
+   - Validates tile count and file sizes
+   - Checks MRF metadata against expected reference
+
+2. **PNG → Brunsli ZenJPEG**: Tile-by-tile conversion with Brunsli compression
+   - Converts base tiles and regenerates overviews using `gdaladdo`
+   - Validates data checksum and MRF metadata
+
+3. **ZenJPEG → Brunsli ZenJPEG**: Lossless JPEG to Brunsli conversion
+   - Converts all tiles including existing overviews
+   - Verifies output matches PNG→Brunsli data size
+   - Validates data checksum (should match Test 2)
+   - Note: Index checksum differs from Test 2 due to different overview handling
+
+4. **Brunsli ZenJPEG → ZenJPEG (round-trip)**: Lossless Brunsli to JPEG decompression
+   - Verifies round-trip produces identical output to original ZenJPEG
+   - Validates both data and index checksums match Test 1
+
+5. **MRF Metadata Consistency**: Validates MRF XML metadata files
+   - Compares generated MRF files against expected reference files
+   - Ensures consistent metadata structure across all conversion paths
+
+**Unit Tests:**
+
+6. **apply_alpha_mask_to_grayscale**: Tests the helper function for grayscale+alpha PNG handling
+   - Creates synthetic 10×10 test data with transparent pixels, black opaque pixels, and normal pixels
+   - Verifies transparent pixels (alpha=0) become 0 for Zen mask
+   - Verifies black opaque pixels (gray=0, alpha>0) become 1 (visually black but not transparent)
+   - Verifies normal pixels (gray>0, alpha>0) keep their original values
+   - Validates single-band output and proper file handling
+   - Tests the Zen mask workaround where value=0 means transparent
+
+**S3 Conversion Test:**
+
+7. **S3 Input → S3 Output**: Tests S3 support using moto to mock AWS S3
+   - Uploads test MRF to mock S3 bucket
+   - Downloads MRF from S3 input location (`s3://bucket/input/`)
+   - Performs PNG → JPEG conversion
+   - Uploads results to S3 output location (`s3://bucket/output/`)
+   - Verifies all files (.mrf, .idx, .pjg) present in S3 output bucket
 
 ## vectorgen Tests:
 1. MVT MRF generation from single shapefile
@@ -298,6 +391,93 @@ Tests legends in horizontal and vertical formats as PNGs and SVGs using various 
 13. Overwriting IDX files whose checksums do not match those of corresponding files in S3 using the `-c` (`--checksum`) argument
 14. Deleting all configs from a directory when syncing with an empty S3 bucket (not in use: commented out)
 15. Deleting all IDX files from a directory when syncing with an empty S3 bucket (not in use: commented out)
+
+## mod_wmts_wrapper Tests
+
+### REST URL Validation
+
+Tests that malformed REST-style WMTS tile requests (`LAYER/STYLE/TIME/TMS/Z/X/Y.ext`) return the correct WMTS error response.
+
+1. **`test_REST_bad_layer`** -- Returns `LAYER does not exist` for an unknown layer name
+2. **`test_REST_bad_style`** -- Returns `STYLE is invalid for LAYER` for an unknown style name
+3. **`test_REST_bad_tilematrixset`** -- Returns `TILEMATRIXSET is invalid for LAYER` when a valid date is provided but the TMS name is unrecognized
+4. **`test_REST_missing_time_returns_tms_error`** -- Returns `TILEMATRIXSET is invalid for LAYER` when the TIME parameter is omitted entirely from a date-enabled layer URL (e.g., `LAYER/default/bad_tms/Z/X/Y.jpg` instead of `LAYER/default/TIME/TMS/Z/X/Y.jpg`)
+5. **`test_REST_malformed_time_returns_time_error`** -- Returns `Invalid time format, must be YYYY-MM-DD or YYYY-MM-DDThh:mm:ssZ` when a TIME value is present but does not match the expected format (e.g., `2020-01-6` with a single-digit day)
+6. **`test_REST_invalid_tilematrix`** -- Returns `TILEMATRIX is out of range` for a Z value exceeding the layer maximum
+7. **`test_REST_bad_tilematrix_value`** -- Returns `TILEMATRIX is not a valid integer` for a non-integer Z value
+8. **`test_REST_bad_tilematrix_range`** -- Returns `TILEMATRIX is out of range` for a Z value exceeding the layer maximum
+9. **`test_REST_row_out_of_range`** -- Returns `TILEROW is out of range` for a row value exceeding the layer maximum
+10. **`test_REST_bad_tilerow_value`** -- Returns `TILEROW is not a valid integer` for a non-integer row value
+11. **`test_REST_tilecol_out_of_range`** -- Returns `TILECOL is out of range` for a column value exceeding the layer maximum
+12. **`test_REST_bad_tilecol_value`** -- Returns `TILECOL is not a valid integer` for a non-integer column value
+13. **`test_REST_bad_format`** -- Returns `FORMAT is invalid for LAYER` for an unrecognized file extension
+14. **`test_REST_bad_url`** -- Returns `LAYER does not exist` for a structurally invalid URL (too few path segments)
+
+### KvP (Key-Value Pair) Validation
+
+Tests that KvP-style WMTS requests with missing or invalid parameters return the correct WMTS error response.
+
+**Missing parameters:**
+
+1. **`test_kvp_missing_request`** -- Returns `Missing REQUEST parameter` when REQUEST is absent
+2. **`test_kvp_missing_service`** -- Returns `Missing SERVICE parameter` when SERVICE is absent
+3. **`test_kvp_missing_version`** -- Returns `Missing VERSION parameter` when VERSION is absent
+4. **`test_kvp_missing_layer`** -- Returns `Missing LAYER parameter` when LAYER is absent
+5. **`test_kvp_missing_format`** -- Returns `Missing FORMAT parameter` when FORMAT is absent
+6. **`test_kvp_missing_tilematrixset`** -- Returns `Missing TILEMATRIXSET parameter` when TILEMATRIXSET is absent
+7. **`test_kvp_missing_tilematrix`** -- Returns `Missing TILEMATRIX parameter` when TILEMATRIX is absent
+8. **`test_kvp_missing_tilerow`** -- Returns `Missing TILEROW parameter` when TILEROW is absent
+9. **`test_kvp_missing_tilecol`** -- Returns `Missing TILECOL parameter` when TILECOL is absent
+
+**Invalid parameters:**
+
+10. **`test_kvp_bad_service`** -- Returns `Unrecognized service` for an unrecognized SERVICE value
+11. **`test_kvp_bad_request`** -- Returns `The request type is not supported` (HTTP 501) for an unsupported REQUEST operation
+12. **`test_kvp_bad_version`** -- Returns `VERSION is invalid` for an unrecognized VERSION value
+13. **`test_kvp_bad_layer`** -- Returns `LAYER does not exist` for an unknown LAYER value
+14. **`test_kvp_bad_style`** -- Returns `STYLE is invalid for LAYER` for an unrecognized STYLE value
+15. **`test_kvp_bad_format`** -- Returns `FORMAT is invalid for LAYER` for a format not supported by the layer
+16. **`test_kvp_bad_tilematrixset`** -- Returns `TILEMATRIXSET is invalid for LAYER` for an unrecognized TILEMATRIXSET value
+17. **`test_kvp_bad_tilematrix_value`** -- Returns `TILEMATRIX is not a valid integer` for a non-integer TILEMATRIX value
+18. **`test_kvp_bad_tilerow_value`** -- Returns `TILEROW is not a valid integer` for a non-integer TILEROW value
+19. **`test_kvp_bad_tilecol_value`** -- Returns `TILECOL is not a valid integer` for a non-integer TILECOL value
+20. **`test_kvp_invalid_tilematrix_`** -- Returns `TILEMATRIX is out of range` for a TILEMATRIX value exceeding the layer maximum
+21. **`test_kvp_tilerow_out_of_range`** -- Returns `TILEROW is out of range` for a TILEROW value exceeding the layer maximum
+22. **`test_kvp_tilecol_out_of_range`** -- Returns `TILECOL is out of range` for a TILECOL value exceeding the layer maximum
+23. **`test_kvp_bad_time_format`** -- Returns `Invalid time format, must be YYYY-MM-DD or YYYY-MM-DDThh:mm:ssZ` for a malformed TIME value
+24. **`test_kvp_bad_time_out_of_range`** -- Returns HTTP 404 when a valid TIME value falls outside the layer's available date range
+
+### Tile Handling
+
+Tests that valid tile requests return the expected tile data and response headers.
+
+**mod_mrf tiles:**
+
+1. **`test_mod_mrf_nodate_tile`** -- Requests a tile from a static (no-date) MRF layer and verifies the tile contents
+2. **`test_mod_mrf_date_tile_default`** -- Requests a tile using `time=default` from a date-enabled MRF layer and verifies the tile contents
+3. **`test_mod_mrf_date_tile`** -- Requests tiles from a date-enabled MRF layer using specific dates (`2012-01-01`, `2015-01-01`) and verifies tile contents
+4. **`test_mod_mrf_datetime_milliseconds_tile`** -- Requests tiles via REST using full datetime strings with milliseconds (e.g., `2012-01-01T12:00:00.000Z`); verifies milliseconds are stripped and correct tile is returned
+5. **`test_kvp_mod_mrf_datetime_milliseconds_tile`** -- Same as above but using KvP request format
+6. **`test_mod_mrf_nodate_tile_headers`** -- Verifies that response headers for a no-date layer contain correct `Layer-Identifier` and `Layer-Time` values
+7. **`test_mod_mrf_defaultdate_tile_headers`** -- Verifies response headers when `time=default`; `Layer-Time-Actual` should be the most recent available date
+8. **`test_mod_mrf_date_tile_headers`** -- Verifies response headers for a specific date request; `Layer-Time-Request` reflects the requested date, `Layer-Time-Actual` reflects the snapped date
+9. **`test_mod_mrf_best_tile_headers`** -- Verifies response headers when a "best available" layer is used; `Layer-Identifier-Actual` reflects the best-layer name
+10. **`test_mod_mrf_date_tile_yeardir`** -- Requests tiles from a date-enabled MRF layer using a year-directory (`YYYY/`) storage layout and verifies tile contents
+11. **`test_mod_mrf_date_tile_daydir`** -- Requests tiles from a date-enabled MRF layer using a day-of-year directory (`YYYY/DDD/`) storage layout and verifies tile contents
+12. **`test_mod_mrf_date_out_of_range`** -- Verifies that requesting a tile with a date outside the layer's available range returns HTTP 404
+
+**mod_reproject tiles:**
+
+13. **`test_mod_reproject_nodate_tile`** -- Requests a tile from a static (no-date) reprojection layer and verifies tile contents
+14. **`test_mod_reproject_default_tile`** -- Requests a tile using `time=default` from a date-enabled reprojection layer and verifies tile contents
+15. **`test_mod_reproject_date_tile`** -- Requests tiles from a date-enabled reprojection layer using specific dates and verifies tile contents
+
+**ZenJPEG and Brunsli tiles:**
+
+16. **`test_zenjpeg_source_mrf_date_yeardir_tile`** -- Requests a tile served from a ZenJPEG source MRF with a year-directory layout and verifies tile contents
+17. **`test_zenjpeg_convert_mrf_date_yeardir_tile`** -- Requests a tile from a ZenJPEG-to-PNG converted MRF with a year-directory layout and verifies tile contents
+18. **`test_brunsli_mrf_date_yeardir_tile_REST`** -- Requests a Brunsli-compressed MRF tile via REST with a year-directory layout and verifies tile contents
+19. **`test_brunsli_mrf_date_yeardir_tile_kvp`** -- Requests a Brunsli-compressed MRF tile via KvP (with a millisecond timestamp) and verifies tile contents
 
 ## WMTS/TWMS Helper Scripts Tests:
 
@@ -352,6 +532,77 @@ The following test cases for `oe_generate_empty_tile.py` are defined in this [fi
 10. Converting a v1.1.0 SLD to a colormap using `SLDtoColorMap.py` with the `--offset` and `--factor` options
 11. Converting a v1.1.0 SLD to a colormap using `SLDtoColorMap.py` with the `--precision` option
 12. Converting a v1.1.0 SLD to a colormap using `SLDtoColorMap.py` with the `--densify` option with `r` specified for "ramp"
+
+
+## mod_wmts_wrapper Tests
+
+The following tests are implemented in `test_mod_wmts_wrapper.py`:
+
+**REST API Error Tests:**
+1. **test_REST_bad_layer**: Invalid layer name
+2. **test_REST_bad_style**: Invalid style parameter
+3. **test_REST_bad_tilematrixset**: Invalid tile matrix set
+4. **test_REST_invalid_tilematrix**: Tile matrix out of range
+5. **test_REST_bad_tilematrix_value**: Non-integer tile matrix value
+6. **test_REST_bad_tilematrix_range**: Tile matrix exceeds maximum
+7. **test_REST_row_out_of_range**: Tile row out of range
+8. **test_REST_bad_tilerow_value**: Non-integer tile row value
+9. **test_REST_tilecol_out_of_range**: Tile column out of range
+10. **test_REST_bad_tilecol_value**: Non-integer tile column value
+11. **test_REST_bad_format**: Invalid format parameter
+12. **test_REST_bad_url**: Malformed REST URL
+
+**KVP (Key-Value Pair) Error Tests:**
+13. **test_kvp_missing_request**: Missing REQUEST parameter
+14. **test_kvp_missing_service**: Missing SERVICE parameter
+15. **test_kvp_missing_version**: Missing VERSION parameter
+16. **test_kvp_missing_layer**: Missing LAYER parameter
+17. **test_kvp_missing_format**: Missing FORMAT parameter
+18. **test_kvp_missing_tilematrixset**: Missing TILEMATRIXSET parameter
+19. **test_kvp_missing_tilematrix**: Missing TILEMATRIX parameter
+20. **test_kvp_missing_tilerow**: Missing TILEROW parameter
+21. **test_kvp_missing_tilecol**: Missing TILECOL parameter
+22. **test_kvp_bad_service**: Invalid SERVICE parameter
+23. **test_kvp_bad_request**: Invalid REQUEST parameter
+24. **test_kvp_bad_version**: Invalid VERSION parameter
+25. **test_kvp_bad_layer**: Invalid LAYER parameter
+26. **test_kvp_bad_style**: Invalid STYLE parameter
+27. **test_kvp_bad_format**: Invalid FORMAT parameter
+28. **test_kvp_bad_tilematrixset**: Invalid TILEMATRIXSET parameter
+29. **test_kvp_bad_tilematrix_value**: Non-integer TILEMATRIX value
+30. **test_kvp_bad_tilerow_value**: Non-integer TILEROW value
+31. **test_kvp_bad_tilecol_value**: Non-integer TILECOL value
+32. **test_kvp_invalid_tilematrix_**: Invalid TILEMATRIX range
+33. **test_kvp_tilerow_out_of_range**: TILEROW out of range
+34. **test_kvp_tilecol_out_of_range**: TILECOL out of range
+35. **test_kvp_bad_time_format**: Invalid time format
+36. **test_kvp_bad_time_out_of_range**: Time parameter out of range
+
+**mod_mrf Tile Request Tests:**
+37. **test_mod_mrf_nodate_tile**: Static layer tile request
+38. **test_mod_mrf_date_tile_default**: Date-based layer with default date
+39. **test_mod_mrf_date_tile**: Date-based layer with specified date
+40. **test_mod_mrf_datetime_milliseconds_tile**: Datetime with milliseconds (REST)
+41. **test_kvp_mod_mrf_datetime_milliseconds_tile**: Datetime with milliseconds (KVP)
+42. **test_mod_mrf_nodate_tile_headers**: Verify headers for static layer
+43. **test_mod_mrf_defaultdate_tile_headers**: Verify headers for default date
+44. **test_mod_mrf_date_tile_headers**: Verify headers for date-based layer
+45. **test_mod_mrf_best_tile_headers**: Verify headers for best layer
+46. **test_mod_mrf_date_tile_yeardir**: Date-based layer with year directory structure
+47. **test_mod_mrf_date_tile_daydir**: Date-based layer with day directory structure
+48. **test_mod_mrf_date_out_of_range**: Date parameter out of valid range
+
+**mod_reproject Tile Request Tests:**
+49. **test_mod_reproject_nodate_tile**: Static reprojected layer tile
+50. **test_mod_reproject_default_tile**: Reprojected layer with default date
+51. **test_mod_reproject_date_tile**: Reprojected layer with specified date
+
+**ZenJPEG and Brunsli Tests:**
+52. **test_zenjpeg_source_mrf_date_yeardir_tile**: ZenJPEG source layer tile
+53. **test_zenjpeg_convert_mrf_date_yeardir_tile**: ZenJPEG conversion to PNG
+54. **test_zenjpeg_convert_mrf_date_yeardir_tile_jpeg**: ZenJPEG passthrough for non-transparent tiles
+55. **test_brunsli_mrf_date_yeardir_tile_REST**: Brunsli-compressed tile (REST)
+56. **test_brunsli_mrf_date_yeardir_tile_kvp**: Brunsli-compressed tile (KVP)
 
 --------
 ## image_compare.py Tests

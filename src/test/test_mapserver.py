@@ -514,6 +514,9 @@ class TestMapserver(unittest.TestCase):
             print('URL: ' + req_url)
         response = get_url(req_url)
 
+        # Check that we got HTTP 400 for bad time parameter
+        self.assertEqual(response.code, 400, 'Expected HTTP 400 for bad time parameter, got {}. URL: {}'.format(response.code, req_url))
+
         # Check if the response is valid XML
         try:
             XMLroot = ElementTree.XML(response.read())
@@ -695,7 +698,7 @@ class TestMapserver(unittest.TestCase):
         """
         42. Test requesting a ZenJPEG layer JPEG
         """
-        ref_hash = 'ebd89876fb7b45802717434f3c80f926'
+        ref_hash = '08bd20412d1d9470c1b245a7439470c9'
         req_url = 'http://localhost/wms/test/wms.cgi?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&FORMAT=image%2Fjpeg&TRANSPARENT=true&LAYERS=test_zenjpeg&CRS=EPSG%3A4326&STYLES=&WIDTH=1024&HEIGHT=1024&BBOX=-90,-180,90,180&TIME=2012-02-22'
         if DEBUG:
             print('\nTesting: Request ZenJPEG-sourced PNG layer as a JPEG via WMS')
@@ -707,7 +710,7 @@ class TestMapserver(unittest.TestCase):
         """
         43. Test requesting a ZenJPEG layer PNG
         """
-        ref_hash = '79c39dfdf372654bfb07426e3fa0772c'
+        ref_hash = 'b31be35fa699dccabd77e779e6376618'
         req_url = 'http://localhost/wms/test/wms.cgi?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&FORMAT=image%2Fpng&TRANSPARENT=true&LAYERS=test_zenjpeg&CRS=EPSG%3A4326&STYLES=&WIDTH=1024&HEIGHT=1024&BBOX=-90,-180,90,180&TIME=2012-02-22'
         if DEBUG:
             print('\nTesting: Request ZenJPEG-sourced PNG layer as a PNG via WMS')
@@ -719,7 +722,7 @@ class TestMapserver(unittest.TestCase):
         """
         44. Test requesting a ZenJPEG layer and another layer as a PNG
         """
-        ref_hash = 'cc159338518168b4e817d3bde1692bc3'
+        ref_hash = '4ec831dfd07026c7765262daa9f8d70c'
         req_url = 'http://localhost/wms/test/wms.cgi?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&FORMAT=image%2Fpng&TRANSPARENT=false&LAYERS=test_static_jpg,test_zenjpeg&CRS=EPSG%3A4326&STYLES=&WIDTH=2048&HEIGHT=1024&BBOX=-90,-180,90,180&TIME=2012-02-22'
         if DEBUG:
             print('\nTesting: Request ZenJPEG PNG layer and an underlying layer via WMS')
@@ -759,7 +762,7 @@ class TestMapserver(unittest.TestCase):
         """
         43. Test requesting a Brunsli-ZenJPEG layer PNG
         """
-        ref_hash = '79c39dfdf372654bfb07426e3fa0772c'
+        ref_hash = 'b31be35fa699dccabd77e779e6376618'
         req_url = 'http://localhost/wms/test/wms.cgi?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&FORMAT=image%2Fpng&TRANSPARENT=true&LAYERS=test_brunsli_zenjpeg&CRS=EPSG%3A4326&STYLES=&WIDTH=1024&HEIGHT=1024&BBOX=-90,-180,90,180&TIME=2012-02-22'
         if DEBUG:
             print('\nTesting: Request ZenJPEG-sourced PNG layer as a PNG via WMS')
@@ -776,7 +779,12 @@ class TestMapserver(unittest.TestCase):
             print('\nTesting: Invalid WMS Format')
             print('URL: ' + req_url)
 
-        response = get_url(req_url).read()
+        response_obj = get_url(req_url)
+        
+        # Check that we got HTTP 400 for invalid format parameter
+        self.assertEqual(response_obj.code, 400, 'Expected HTTP 400 for invalid format parameter, got {}. URL: {}'.format(response_obj.code, req_url))
+        
+        response = response_obj.read()
 
         # Check if the response is valid XML
         try:
@@ -804,7 +812,12 @@ class TestMapserver(unittest.TestCase):
             print('\nTesting: Invalid WMS Format')
             print('URL: ' + req_url)
 
-        response = get_url(req_url).read()
+        response_obj = get_url(req_url)
+        
+        # Check that we got HTTP 400 for invalid format parameter
+        self.assertEqual(response_obj.code, 400, 'Expected HTTP 400 for invalid format parameter, got {}. URL: {}'.format(response_obj.code, req_url))
+        
+        response = response_obj.read()
 
         # Check if the response is valid XML
         try:

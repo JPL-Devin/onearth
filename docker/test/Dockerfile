@@ -1,7 +1,7 @@
 # This Dockerfile must be run from source root
-FROM nasagibs/onearth-deps:2.9.6
+FROM nasagibs/onearth-deps:2.9.8
 
-ARG MRF_VERSION=3.0.1
+ARG MRF_VERSION=3.0.3
 ARG ALMALINUX_VERSION=10
 ARG GDAL_VERSION=3.13.2
 ENV GDAL_VERSION=$GDAL_VERSION
@@ -24,7 +24,7 @@ RUN dnf install -y \
         proj-devel-9.6.0 \
         fribidi-devel-1.0.14 \
         cairo-devel-1.18.2 \
-        cmake-3.30.5 \
+        cmake-3.31.8 \
         geos-3.13.1 \
         geos-devel-3.13.1 \
         harfbuzz-devel-8.4.0 \
@@ -72,7 +72,7 @@ RUN dnf remove -y python3-dateutil
 COPY requirements.txt .
 
 # Install pip dependencies
-RUN pip install pip==26.0.1
+RUN pip install pip==26.1.2
 RUN pip install -r requirements.txt
 
 # libspatialindex
@@ -105,7 +105,6 @@ RUN git clone --depth 1 --branch v${MRF_VERSION} https://github.com/nasa-gibs/mr
     curl "https://raw.githubusercontent.com/OSGeo/gdal/v${GDAL_VERSION}/frmts/mrf/marfa.h" -o /usr/local/include/marfa.h && \
     cd mrf/mrf_apps/ && \
     echo $'PREFIX=/usr/local\nGDAL_ROOT=/usr/local/include/' >> Makefile.lcl && \
-    sed -i 's/mrf_insert jxl/mrf_insert/g' Makefile && \
     sed -i 's/papszOptions) override/papszOptions)/g' /usr/local/include/marfa.h && \
     make && make install && \
     ldconfig && \
@@ -186,10 +185,9 @@ WORKDIR /home/oe2/onearth/src/mrfgen
 RUN gcc -O3 RGBApng2Palpng.c -o RGBApng2Palpng -lpng
 
 # pip updates
-RUN python3 -m pip install --user cython==3.1.2 
+RUN python3 -m pip install --user cython==3.1.2
 RUN python3 setup.py build_ext --inplace
-#Removed Shapely as it is already installed
-RUN python3 -m pip install moto[server]==4.2.7 werkzeug==3.0.1
+RUN python3 -m pip install moto[server]==5.2.2 werkzeug==3.0.1
 
 # Install OnEarth utilties, etc.
 WORKDIR /home/oe2/onearth/
@@ -204,6 +202,7 @@ RUN install -m 755 src/empty_tile/oe_generate_empty_tile.py -D /usr/bin/oe_gener
     install -m 755 src/mrfgen/overtiffpacker.py -D /usr/bin/overtiffpacker.py && \
     install -m 755 src/mrfgen/RGBApng2Palpng -D /usr/bin/RGBApng2Palpng && \
     install -m 755 src/mrfgen/oe_validate_palette.py -D /usr/bin/oe_validate_palette.py && \
+    install -m 755 src/mrfgen/convert_mrf.py -D /usr/bin/convert_mrf.py && \
     install -m 755 src/scripts/oe_utils.py -D /usr/bin/oe_utils.py && \
     install -m 755 src/scripts/twmsbox2wmts.py -D /usr/bin/twmsbox2wmts.py && \
     install -m 755 src/scripts/wmts2twmsbox.py -D /usr/bin/wmts2twmsbox.py && \
@@ -241,7 +240,7 @@ RUN perl -pi -e "s/LogLevel warn/LogLevel debug/g" /etc/httpd/conf/httpd.conf &&
 RUN cp /home/oe2/onearth/docker/00-mpm.conf /etc/httpd/conf.modules.d/ && \
     cp /home/oe2/onearth/docker/10-worker.conf /etc/httpd/conf.modules.d/
 
-ENV ONEARTH_VERSION=2.9.6
+ENV ONEARTH_VERSION=2.9.8
 
 # Generate SSL certs
 RUN /usr/libexec/httpd-ssl-gencerts

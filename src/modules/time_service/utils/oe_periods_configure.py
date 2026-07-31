@@ -86,123 +86,130 @@ def load_time_configs(layer_configs, redis_uri, redis_port, generate_periods=Fal
                 lower().replace(':', '')
 
     for layer_config in layer_configs:
-        config_path = str(layer_config['path'].absolute())
-        print(f'Adding time period configuration from {config_path}')
-        key = proj + ':layer:' + str(layer_config['config']['layer_id'])
+        try:
+            config_path = str(layer_config['path'].absolute())
+            print(f'Adding time period configuration from {config_path}')
+            key = proj + ':layer:' + str(layer_config['config']['layer_id'])
 
-        # add copy_dates to redis if specified in the config or if it's a ZENJPEG layer
-        copy_destination = None
-        key_copy_dates = key + ':copy_dates'
-        key_copy_dates_wm = key_copy_dates.replace('epsg4326', 'epsg3857')
-        if 'copy_dates' in layer_config['config'].keys():
-            copy_destination = layer_config['config']['copy_dates']
-        elif '_ZENJPEG' in layer_config['config']['layer_id']:
-            copy_destination = layer_config['config']['layer_id'].replace('_ZENJPEG', '')
-        
-        if copy_destination:
-            # clear out existing copy_dates key for layer
-            r.delete(key_copy_dates)
-            if 'epsg4326' in key:
-                # delete key for reproject as well
-                r.delete(key_copy_dates_wm)
-            print('Adding ' + copy_destination + ' to ' + key_copy_dates)
-            r.set(key_copy_dates, copy_destination)
-            # duplicate copy_dates for epsg3857 for reproject
-            if 'epsg4326' in key:
-                print('Adding ' + copy_destination + ' to ' + key_copy_dates_wm)
-                r.set(key_copy_dates_wm, copy_destination)
-
-
-        if 'time_config' in layer_config['config'].keys():
-            key_config = key + ':config'
-            key_config_wm = key_config.replace('epsg4326', 'epsg3857')
-            # check whether we have a single string or list of values
-            if isinstance(layer_config['config']['time_config'], str):
-                time_configs = [layer_config['config']['time_config']]
-            else:
-                time_configs = layer_config['config']['time_config']
-
-            # clear out existing time configs for layer
-            r.delete(key_config)
-            if 'epsg4326' in key:
-                # delete key for reproject as well
-                r.delete(key_config_wm)
-
-            # add all time configs for layer
-            for time_config in time_configs:
-                print('Adding ' + time_config + ' to ' + key_config)
-                r.sadd(key_config, time_config)
-                # duplicate config for epsg3857 for reproject
+            # add copy_dates to redis if specified in the config or if it's a ZENJPEG layer
+            copy_destination = None
+            key_copy_dates = key + ':copy_dates'
+            key_copy_dates_wm = key_copy_dates.replace('epsg4326', 'epsg3857')
+            if 'copy_dates' in layer_config['config'].keys():
+                copy_destination = layer_config['config']['copy_dates']
+            elif '_ZENJPEG' in layer_config['config']['layer_id']:
+                copy_destination = layer_config['config']['layer_id'].replace('_ZENJPEG', '')
+            
+            if copy_destination:
+                # clear out existing copy_dates key for layer
+                r.delete(key_copy_dates)
                 if 'epsg4326' in key:
-                    print('Adding ' + time_config + ' to ' + key_config_wm)
-                    r.sadd(key_config_wm, time_config)
-
-            # refresh time periods in redis
-            if generate_periods:
-                print('Generating periods for ' + key)
-                calculate_layer_periods(redis_cli=r, layer_key=key)
-                # generate periods for reproject as well
+                    # delete key for reproject as well
+                    r.delete(key_copy_dates_wm)
+                print('Adding ' + copy_destination + ' to ' + key_copy_dates)
+                r.set(key_copy_dates, copy_destination)
+                # duplicate copy_dates for epsg3857 for reproject
                 if 'epsg4326' in key:
-                    key_wm = key.replace('epsg4326', 'epsg3857')
-                    print('Generating periods for ' + key_wm)
-                    calculate_layer_periods(redis_cli=r, layer_key=key_wm)
+                    print('Adding ' + copy_destination + ' to ' + key_copy_dates_wm)
+                    r.set(key_copy_dates_wm, copy_destination)
 
-            # static best layers need at least a single date value
-            if 'static' in layer_config['config'].keys() and 'best_config' in layer_config['config'].keys():
-                if layer_config['config']['static'] == True:
-                    layer = str(layer_config['config']['layer_id'])
-                    best_layer = str(layer_config['config']['best_config'][1])
-                    print(f'Configuring best layer {layer} -> {best_layer}')
-                    r.hset(key_config.replace('config','best'), '1900-01-01T00:00:00Z', best_layer)
-                    r.hset(key_config.replace('config','best'), '2899-12-31T00:00:00Z', best_layer)
+
+            if 'time_config' in layer_config['config'].keys():
+                key_config = key + ':config'
+                key_config_wm = key_config.replace('epsg4326', 'epsg3857')
+                # check whether we have a single string or list of values
+                if isinstance(layer_config['config']['time_config'], str):
+                    time_configs = [layer_config['config']['time_config']]
+                else:
+                    time_configs = layer_config['config']['time_config']
+
+                # clear out existing time configs for layer
+                r.delete(key_config)
+                if 'epsg4326' in key:
+                    # delete key for reproject as well
+                    r.delete(key_config_wm)
+
+                # add all time configs for layer
+                for time_config in time_configs:
+                    print('Adding ' + time_config + ' to ' + key_config)
+                    r.sadd(key_config, time_config)
+                    # duplicate config for epsg3857 for reproject
                     if 'epsg4326' in key:
-                        r.hset(key_config_wm.replace('config','best'), '1900-01-01T00:00:00Z', best_layer)
-                        r.hset(key_config_wm.replace('config','best'), '2899-12-31T00:00:00Z', best_layer)
-        else:
-            print('No time configuration found for ' +
-                  str(layer_config['path'].absolute()))
+                        print('Adding ' + time_config + ' to ' + key_config_wm)
+                        r.sadd(key_config_wm, time_config)
 
-        # best configs
-        if 'best_config' in layer_config['config'].keys():
-            best_config = key + ':best_config'
-            best_config_wm = best_config.replace('epsg4326', 'epsg3857')
-            print('Processing best_config', best_config)
+                # refresh time periods in redis
+                if generate_periods:
+                    print('Generating periods for ' + key)
+                    calculate_layer_periods(redis_cli=r, layer_key=key)
+                    # generate periods for reproject as well
+                    if 'epsg4326' in key:
+                        key_wm = key.replace('epsg4326', 'epsg3857')
+                        print('Generating periods for ' + key_wm)
+                        calculate_layer_periods(redis_cli=r, layer_key=key_wm)
 
-            # clear out existing best configs for layer
-            r.delete(best_config)
-            if 'epsg4326' in key:
-                # delete key for reproject as well
-                r.delete(best_config_wm)
+                # static best layers need at least a single date value
+                if 'static' in layer_config['config'].keys() and 'best_config' in layer_config['config'].keys():
+                    if layer_config['config']['static'] == True:
+                        layer = str(layer_config['config']['layer_id'])
+                        best_layer = str(layer_config['config']['best_config'][1])
+                        print(f'Configuring best layer {layer} -> {best_layer}')
+                        r.hset(key_config.replace('config','best'), '1900-01-01T00:00:00Z', best_layer)
+                        r.hset(key_config.replace('config','best'), '2899-12-31T00:00:00Z', best_layer)
+                        if 'epsg4326' in key:
+                            r.hset(key_config_wm.replace('config','best'), '1900-01-01T00:00:00Z', best_layer)
+                            r.hset(key_config_wm.replace('config','best'), '2899-12-31T00:00:00Z', best_layer)
+            else:
+                print('No time configuration found for ' +
+                      str(layer_config['path'].absolute()))
 
-            # process each best_config item
-            for zscore, value in layer_config['config']['best_config'].items():
-                print('Adding ' + f'{key}: {value}' + ' to ' + best_config)
-                r.zadd(best_config, {value: int(zscore)})
-                # duplicate config for epsg3857 for reproject
+            # best configs
+            if 'best_config' in layer_config['config'].keys():
+                best_config = key + ':best_config'
+                best_config_wm = best_config.replace('epsg4326', 'epsg3857')
+                print('Processing best_config', best_config)
+
+                # clear out existing best configs for layer
+                r.delete(best_config)
                 if 'epsg4326' in key:
-                    print('Adding ' + f'{key}: {value}' + ' to ' + best_config_wm)
-                    r.zadd(best_config_wm, {value: int(zscore)})
+                    # delete key for reproject as well
+                    r.delete(best_config_wm)
 
-        # best layer
-        if 'best_layer' in layer_config['config'].keys():
-            best_layer = key + ':best_layer'
-            best_layer_wm = best_layer.replace('epsg4326', 'epsg3857')
-            print('Processing best_layer', best_layer)
+                # process each best_config item
+                for zscore, value in layer_config['config']['best_config'].items():
+                    print('Adding ' + f'{key}: {value}' + ' to ' + best_config)
+                    r.zadd(best_config, {value: int(zscore)})
+                    # duplicate config for epsg3857 for reproject
+                    if 'epsg4326' in key:
+                        print('Adding ' + f'{key}: {value}' + ' to ' + best_config_wm)
+                        r.zadd(best_config_wm, {value: int(zscore)})
 
-            # clear out existing best_layer for layer
-            r.delete(best_layer)
-            if 'epsg4326' in key:
-                # delete key for reproject as well
-                r.delete(best_layer_wm)
+            # best layer
+            if 'best_layer' in layer_config['config'].keys():
+                best_layer = key + ':best_layer'
+                best_layer_wm = best_layer.replace('epsg4326', 'epsg3857')
+                print('Processing best_layer', best_layer)
 
-            # process each best_layer value
-            best_layer_value = layer_config['config']['best_layer']
-            print('Adding ' + f'{best_layer_value}' + ' to ' + best_layer)
-            r.set(best_layer, best_layer_value)
-            # duplicate best_layer for epsg3857 for reproject
-            if 'epsg4326' in key:
-                print('Adding ' + f'{best_layer_value}' + ' to ' + best_layer_wm)
-                r.set(best_layer_wm, best_layer_value)
+                # clear out existing best_layer for layer
+                r.delete(best_layer)
+                if 'epsg4326' in key:
+                    # delete key for reproject as well
+                    r.delete(best_layer_wm)
+
+                # process each best_layer value
+                best_layer_value = layer_config['config']['best_layer']
+                if best_layer_value is None:
+                    print(f'WARNING: best_layer value is None for {config_path}, skipping')
+                else:
+                    print('Adding ' + f'{best_layer_value}' + ' to ' + best_layer)
+                    r.set(best_layer, best_layer_value)
+                    # duplicate best_layer for epsg3857 for reproject
+                    if 'epsg4326' in key:
+                        print('Adding ' + f'{best_layer_value}' + ' to ' + best_layer_wm)
+                        r.set(best_layer_wm, best_layer_value)
+
+        except Exception as e:
+            print(f'ERROR processing {str(layer_config["path"].absolute())}: {e}')
 
 
 # Main routine to be run in CLI mode

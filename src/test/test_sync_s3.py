@@ -110,9 +110,9 @@ class TestSyncS3(unittest.TestCase):
         self.sync_dir_path = os.path.join(os.getcwd(), SYNC_DIR)
         os.environ["AWS_ACCESS_KEY_ID"] = "testing"
         os.environ["AWS_SECRET_ACCESS_KEY"] = "testing"
-        # Start moto_server. Not using `run_command()` here because moto_server hangs when `universal_newlines=True`
-        cmd = "moto_server s3 -p 5000"
-        moto_process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        # Start moto server. Not using `run_command()` here because moto server hangs when `universal_newlines=True`
+        cmd = "python3 -m moto.server -p 5000"
+        self.moto_process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         time.sleep(5)
         # set up mock s3 bucket
         try:
@@ -409,6 +409,10 @@ class TestSyncS3(unittest.TestCase):
     def tearDownClass(self):
         os.rmdir(self.sync_dir_path)
         clear_bucket(True)
+        # Stop moto server
+        if hasattr(self, 'moto_process'):
+            self.moto_process.terminate()
+            self.moto_process.wait()
         
 if __name__ == '__main__':
     # Parse options before running tests

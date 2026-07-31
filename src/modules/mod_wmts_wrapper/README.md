@@ -111,6 +111,18 @@ path.
 Example: `IndexFile
 /var/www/html/mrf_endpoint/date_test_year_dir/default/tms/${YYYY}/${filename}.idx`
 
+### WMTSWrapperEnableDayDir (On|Off)
+
+If turned on, the wrapper module will look for a day-of-year substitution string
+in the path to the IDX (and data) file. Use ${DDD} where the zero-padded
+day-of-year (001-366) should be inserted. This is intended for sub-daily layers
+that are organized into a YYYY/DDD directory structure so that a single day's
+worth of index files share a directory. It is typically used together with
+`WMTSWrapperEnableYearDir`.
+
+Example: `IndexFile
+/var/www/html/mrf_endpoint/subdaily_test/default/tms/${YYYY}/${DDD}/${filename}.idx`
+
 ### WMTSWrapperDateServiceKeys (String, can be multiple)
 
 The OnEarth date service can accept additional keys (can be used to separate

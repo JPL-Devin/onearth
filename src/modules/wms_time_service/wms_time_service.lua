@@ -58,7 +58,7 @@ local function sendErrorResponse(code, locator, msg_string)
     {
         ["Content-Type"] = "text/xml"
     },
-    200
+    400
 end
 
 local function sendResponse(code, msg_string)

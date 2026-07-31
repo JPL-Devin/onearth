@@ -6,14 +6,14 @@ ARG GDAL_VERSION=3.13.2
 ENV GDAL_VERSION=$GDAL_VERSION
 ARG GIBS_GDAL_RELEASE=1
 ENV GIBS_GDAL_RELEASE=$GIBS_GDAL_RELEASE
-ARG MRF_VERSION=3.0.1
+ARG MRF_VERSION=3.0.3
 
 RUN dnf install -y \
         proj-9.6.0 \
         proj-devel-9.6.0 \
         fribidi-devel-1.0.14 \
         cairo-devel-1.18.2 \
-        cmake-3.30.5 \
+        cmake-3.31.8 \
         geos-3.13.1 \
         geos-devel-3.13.1 \
         harfbuzz-devel-8.4.0 \
@@ -62,6 +62,13 @@ WORKDIR /home/oe2/onearth
 # Remove dependency that conflicts with older version in OnEarth requirements.txt
 RUN dnf remove -y python3-dateutil
 
+<<<<<<< HEAD
+=======
+# Install pip dependencies
+RUN pip install pip==26.1.2
+RUN pip install -r requirements.txt
+
+>>>>>>> 84d4f1870794cd4b8db093a4bc31150226fb6f01
 # Install GDAL
 ENV LD_LIBRARY_PATH=:/usr/local/lib
 WORKDIR /tmp
@@ -91,7 +98,6 @@ RUN git clone --depth 1 --branch v${MRF_VERSION} https://github.com/nasa-gibs/mr
     curl "https://raw.githubusercontent.com/OSGeo/gdal/v${GDAL_VERSION}/frmts/mrf/marfa.h" -o /usr/local/include/marfa.h && \
     cd mrf/mrf_apps/ && \
     echo $'PREFIX=/usr/local\nGDAL_ROOT=/usr/local/include/' >> Makefile.lcl && \
-    sed -i 's/mrf_insert jxl/mrf_insert/g' Makefile && \
     sed -i 's/papszOptions) override/papszOptions)/g' /usr/local/include/marfa.h && \
     make && make install && \
     ldconfig && \

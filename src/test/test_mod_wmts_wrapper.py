@@ -111,6 +111,28 @@ MOD_MRF_DATE_APACHE_TEMPLATE = """<Directory {endpoint_path}/{layer_name}>
 </Directory>
 """
 
+# Sub-daily layers organized into YYYY/DDD (year/day-of-year) directories
+MOD_MRF_DATE_DAYDIR_APACHE_TEMPLATE = """<Directory {endpoint_path}/{layer_name}>
+    WMTSWrapperRole layer
+    WMTSWrapperMimeType image/jpeg
+</Directory>
+
+<Directory {endpoint_path}/{layer_name}/default>
+    WMTSWrapperRole style
+    WMTSWrapperEnableTime On
+    WMTSWrapperTimeLookupUri /date_service/date_service
+</Directory>
+
+<Directory {endpoint_path}/{layer_name}/default/{tilematrixset}>
+    WMTSWrapperRole tilematrixset
+    WMTSWrapperEnableYearDir On
+    WMTSWrapperEnableDayDir On
+    WMTSWrapperLayerAlias {layer_name}
+    MRF_ConfigurationFile {config_file_path}
+    MRF_RegExp {layer_name}
+</Directory>
+"""
+
 MOD_CONVERT_DATE_APACHE_TEMPLATE = """<Directory {endpoint_path}/{layer_name}>
     WMTSWrapperRole layer
     WMTSWrapperMimeType image/png
@@ -253,6 +275,7 @@ class TestModWmtsWrapper(unittest.TestCase):
         self.setup_mrf_date()
         self.setup_date_service()
         self.setup_mrf_date_yeardir()
+        self.setup_mrf_date_daydir()
         self.setup_mrf_reproject_nodate()
         self.setup_mrf_reproject_date()
         self.setup_brunsli_source_mrf_date_yeardir()
@@ -565,6 +588,99 @@ class TestModWmtsWrapper(unittest.TestCase):
         seed_redis_data(redis_data)
         self.redis_layers.append(redis_data)
     
+    @classmethod
+    def setup_mrf_date_daydir(self):
+        # Configure mod_mrf setup for a sub-daily layer whose IDX/data files are
+        # organized into YYYY/DDD (year/day-of-year) directories.
+        size_x = 2560
+        size_y = 1280
+        tile_size = 512
+        image_type = "jpeg"
+        tilematrixset = '16km'
+
+        config_prefix = 'test_mrf_date_daydir'
+        # Source imagery (byte-identical to the flat test_mrf_date layer, so the
+        # served tiles hash to the same known values).
+        src_prefix = 'test_mrf_date'
+
+        # Add Apache config for base imagery layer to be served by mod_mrf
+        layer_path = '{}/default/{}'.format(config_prefix, tilematrixset)
+        self.mrf_endpoint_path_date_daydir = os.path.join(
+            self.endpoint_path, layer_path)
+        self.mrf_url_date = '{}/{}/{}'.format(
+            base_url, self.endpoint_prefix_mrf, config_prefix)
+        apache_config = bulk_replace(
+            MOD_MRF_DATE_DAYDIR_APACHE_TEMPLATE,
+            [('{config_path}', self.mrf_endpoint_path_date_daydir),
+             ('{config_file_path}',
+              os.path.join(self.mrf_endpoint_path_date_daydir,
+                           config_prefix + '.config')),
+             ('{alias}', self.endpoint_prefix_mrf),
+             ('{endpoint_path}', self.endpoint_path),
+             ('{layer_name}', config_prefix),
+             ('{tilematrixset}', tilematrixset)])
+
+        self.mod_mrf_apache_config_path_date_daydir = os.path.join(
+            apache_conf_dir, config_prefix + '.conf')
+        with open(self.mod_mrf_apache_config_path_date_daydir, 'w+') as f:
+            f.write(apache_config)
+
+        # Copy test imagery into YYYY/DDD subdirectories
+        test_imagery_path = os.path.join(os.getcwd(),
+                                         'mod_wmts_wrapper_test_data')
+        make_dir_tree(
+            self.mrf_endpoint_path_date_daydir, ignore_existing=True)
+
+        # Both dates are Jan 1, so the day-of-year directory is '001'
+        for date in ['2012001000000', '2015001000000']:
+            year = date[:4]
+            doy = date[4:7]
+            daydir = os.path.join(self.mrf_endpoint_path_date_daydir, year, doy)
+            make_dir_tree(daydir, ignore_existing=True)
+
+            date_idx_path = os.path.join(daydir,
+                                         config_prefix + '-' + date + '.idx')
+            date_data_path = os.path.join(daydir,
+                                          config_prefix + '-' + date + '.pjg')
+            shutil.copy(
+                os.path.join(test_imagery_path,
+                             src_prefix + '-' + date + '.idx'),
+                date_idx_path)
+            shutil.copy(
+                os.path.join(test_imagery_path,
+                             src_prefix + '-' + date + '.pjg'),
+                date_data_path)
+
+        idx_path = os.path.join(self.mrf_endpoint_path_date_daydir,
+                                '${YYYY}/${DDD}/${filename}.idx')
+        data_path = os.path.join(self.mrf_endpoint_path_date_daydir,
+                                 '${YYYY}/${DDD}/${filename}.pjg')
+
+        # Build layer config
+        data_config = 'DataFile ' + data_path
+        bands = {'png': 4, 'lerc': 1, 'lrc': 1}.get(image_type, 3)
+        mod_mrf_config = bulk_replace(
+            MOD_MRF_CONFIG_TEMPLATE,
+            [('{size_x}', size_x), ('{size_y}', size_y),
+             ('{bands}', bands),
+             ('{tile_size_x}', tile_size), ('{tile_size_y}', tile_size),
+             ('{idx_path}', idx_path), ('{data_config}', data_config),
+             ('{skipped_levels}', '0' if size_x == size_y else '1')])
+
+        mod_mrf_config_path = os.path.join(self.mrf_endpoint_path_date_daydir,
+                                           config_prefix + '.config')
+
+        with open(mod_mrf_config_path, 'w+') as f:
+            f.write(mod_mrf_config)
+
+        redis_data = [
+            ('test_mrf_date_daydir', '2012-01-01',
+             '2012-01-01/2016-01-01/P1Y', '2013-06-06',
+             '2013-01-01T00:00:00Z'),
+        ]
+        seed_redis_data(redis_data)
+        self.redis_layers.append(redis_data)
+
     @classmethod
     def setup_zenjpeg_source_mrf_date_yeardir(self):
         # Configure mod_mrf setup
@@ -1083,6 +1199,41 @@ class TestModWmtsWrapper(unittest.TestCase):
                 test_wmts_error(self, test_url, 400, 'InvalidParameterValue',
                                 'TILEMATRIXSET',
                                 'TILEMATRIXSET is invalid for LAYER')
+
+    def test_REST_missing_time_returns_tms_error(self):
+        for module in ('mrf', 'reproject'):
+            for fmt in ('date', 'date_yeardir'):
+                if module == 'reproject' and fmt == 'date_yeardir':
+                    continue
+
+                module_url = 'mod_wmts_wrapper_' + module
+                layer_name = 'test_{}_{}'.format(module, fmt)
+
+                # Time parameter is omitted entirely; should report TMS error, not TIME error
+                test_url = '{}/{}/{}/default/bad_tms/0/0/0.jpg'.format(
+                    base_url, module_url, layer_name)
+
+                test_wmts_error(self, test_url, 400, 'InvalidParameterValue',
+                                'TILEMATRIXSET',
+                                'TILEMATRIXSET is invalid for LAYER')
+
+    def test_REST_malformed_time_returns_time_error(self):
+        for module in ('mrf', 'reproject'):
+            for fmt in ('date', 'date_yeardir'):
+                if module == 'reproject' and fmt == 'date_yeardir':
+                    continue
+
+                module_url = 'mod_wmts_wrapper_' + module
+                layer_name = 'test_{}_{}'.format(module, fmt)
+
+                tms = 'GoogleMapsCompatible_Level3' if module == 'reproject' else '16km'
+                # Malformed date (single-digit day); should report TIME error, not TMS error
+                test_url = '{}/{}/{}/default/2020-01-6/{}/0/0/0.jpg'.format(
+                    base_url, module_url, layer_name, tms)
+
+                test_wmts_error(self, test_url, 400, 'InvalidParameterValue',
+                                'TIME',
+                                'Invalid time format, must be YYYY-MM-DD or YYYY-MM-DDThh:mm:ssZ')
 
     def test_REST_invalid_tilematrix(self):
         for module in ('mrf', 'reproject'):
@@ -1721,6 +1872,19 @@ class TestModWmtsWrapper(unittest.TestCase):
                 tile_url)
             self.assertTrue(check_tile_request(tile_url, test[1]), errstring)
             
+    def test_mod_mrf_date_tile_daydir(self):
+        # Sub-daily YYYY/DDD directory layout. Both dates are Jan 1 (DDD=001).
+        # Imagery is byte-identical to the flat test_mrf_date layer, so the
+        # served tiles hash to the same known values.
+        for test in [('2012-01-01', '3f84501587adfe3006dcbf59e67cd0a3'),
+                     ('2015-01-01', '9b38d90baeeebbcadbc8560a29481a5e')]:
+            tile_url = 'http://localhost/mod_wmts_wrapper_mrf/test_mrf_date_daydir/default/{}/16km/0/0/0.jpg'.format(
+                test[0])
+
+            errstring = 'Tile at URL:{} was not the same as what was expected.'.format(
+                tile_url)
+            self.assertTrue(check_tile_request(tile_url, test[1]), errstring)
+
     def test_mod_mrf_date_out_of_range(self):
         for test in [('2000-01-01','2020-01-01')]:
             tile_url = 'http://localhost/mod_wmts_wrapper_mrf/test_mrf_date/default/{}/16km/0/0/0.jpg'.format(
@@ -1769,6 +1933,15 @@ class TestModWmtsWrapper(unittest.TestCase):
             tile_url)
         self.assertTrue(check_tile_request(tile_url, ref_hash), errstring)
 
+    def test_zenjpeg_convert_mrf_date_yeardir_tile_jpeg(self):
+        # This requests a tile containing no transparency, expecting a JPG response with PNG file extension
+        tile_url = 'http://localhost/mod_wmts_wrapper_mrf/test_zenjpeg_convert_mrf_date_yeardir/default/2012-02-22/2km/2/1/1.png'
+
+        ref_hash = '2df5ac8f7f3d44e0dfe1570102ec3dc7'
+        errstring = 'Tile at URL:{} was not the same as what was expected.'.format(
+            tile_url)
+        self.assertTrue(check_tile_request(tile_url, ref_hash), errstring)
+
     def test_brunsli_mrf_date_yeardir_tile_REST(self):
         tile_url = ('http://localhost/mod_wmts_wrapper_mrf'
                     '/test_brunsli_source_mrf_date_yeardir/default/2021-04-10'
@@ -1791,6 +1964,7 @@ class TestModWmtsWrapper(unittest.TestCase):
         shutil.rmtree(self.base_tmp_path)
         os.remove(self.mod_mrf_apache_config_path_date)
         os.remove(self.mod_mrf_apache_config_path_date_yeardir)
+        os.remove(self.mod_mrf_apache_config_path_date_daydir)
         os.remove(self.mod_mrf_apache_config_path_nodate)
         os.remove(self.mod_reproj_apache_config_path_date)
         os.remove(self.mod_reproj_apache_config_path_nodate)

@@ -25,11 +25,10 @@ import subprocess
 import time
 import redis
 import requests
-from oe_test_utils import restart_apache, make_dir_tree, remove_redis_layer, seed_redis_data
+from oe_test_utils import restart_apache, make_dir_tree, remove_redis_layer, seed_redis_data, xml_compare
 import shutil
 from lxml import etree
 import json
-from formencode.doctest_xml_compare import xml_compare
 import math
 from functools import partial
 import datetime
@@ -3792,6 +3791,10 @@ class TestDateService(unittest.TestCase):
         layer = TEST_LAYERS['test_1']
         layer_config_path = self.write_config_for_test_layer(layer)
 
+        # Add config key to Redis so layer is recognized as valid
+        r = redis.StrictRedis(host='localhost', port=6379, db=0)
+        r.sadd('layer:{0}:config'.format(layer['layer_id']), 'P1D')
+
         redis_info = None
         if layer.get('static') == 'false':
             redis_info = [
@@ -3805,6 +3808,9 @@ class TestDateService(unittest.TestCase):
 
         if not START_SERVER:
             os.remove(layer_config_path)
+            # Clean up Redis config key
+            redis_client = redis.StrictRedis(host='localhost', port=6379, db=0)
+            redis_client.delete('layer:{0}:config'.format(layer['layer_id']))
             if redis_info:
                 remove_redis_layer(redis_info)
 
@@ -4299,19 +4305,15 @@ class TestDateService(unittest.TestCase):
                 'Response for url: {} is not valid xml. Error: {}'.format(
                     url, e))
 
-        message_elems = response_dom.findall('{*}Message')
-        self.assertNotEqual(
-            len(message_elems), 0,
-            '<Message> not found in error response. Url: {}'.format(url))
         self.assertEqual(
-            len(message_elems), 1,
-            'Incorrect number of <Message> elements found -- should only be 1. Url: {}'
-            .format(url))
+            r.status_code, 400,
+            'Expected HTTP 400 for nonexistent layer, got {}. Url: {}'.format(
+                r.status_code, url))
+
+        exception_elems = response_dom.findall('.//{*}ExceptionText')
         
-        # TODO once we resolve https://bugs.earthdata.nasa.gov/projects/GITC/issues/GITC-7806 we should 
-        # be checking the error code status not the message 
         expected_message = 'You must request a layer if you specify the layer query parameter'
-        found_message = message_elems[0].text
+        found_message = exception_elems[0].text
         self.assertIn(
             expected_message, found_message,
             'Expected error message containing "{}", found "{}". Url: {}'.format(
@@ -4347,19 +4349,15 @@ class TestDateService(unittest.TestCase):
                 'Response for url: {} is not valid xml. Error: {}'.format(
                     url, e))
 
-        message_elems = response_dom.findall('{*}Message')
-        self.assertNotEqual(
-            len(message_elems), 0,
-            '<Message> not found in error response. Url: {}'.format(url))
         self.assertEqual(
-            len(message_elems), 1,
-            'Incorrect number of <Message> elements found -- should only be 1. Url: {}'
-            .format(url))
+            r.status_code, 404,
+            'Expected HTTP 404 for nonexistent layer, got {}. Url: {}'.format(
+                r.status_code, url))
+
+        exception_elems = response_dom.findall('.//{*}ExceptionText')
         
-        # TODO once we resolve https://bugs.earthdata.nasa.gov/projects/GITC/issues/GITC-7806 we should 
-        # be checking the error code status not the message 
         expected_message = 'Requested layer(s) not found: {}'.format(nonexistent_layer)
-        found_message = message_elems[0].text
+        found_message = exception_elems[0].text
         self.assertIn(
             expected_message, found_message,
             'Expected error message containing "{}", found "{}". Url: {}'.format(
@@ -4396,19 +4394,15 @@ class TestDateService(unittest.TestCase):
                 'Response for url: {} is not valid xml. Error: {}'.format(
                     url, e))
 
-        message_elems = response_dom.findall('{*}Message')
-        self.assertNotEqual(
-            len(message_elems), 0,
-            '<Message> not found in error response. Url: {}'.format(url))
         self.assertEqual(
-            len(message_elems), 1,
-            'Incorrect number of <Message> elements found -- should only be 1. Url: {}'
-            .format(url))
+            r.status_code, 404,
+            'Expected HTTP 404 for nonexistent layer, got {}. Url: {}'.format(
+                r.status_code, url))
+
+        exception_elems = response_dom.findall('.//{*}ExceptionText')
         
-        # TODO once we resolve https://bugs.earthdata.nasa.gov/projects/GITC/issues/GITC-7806 we should 
-        # be checking the error code status not the message 
         expected_message = 'Requested layer(s) not found: {}'.format(nonexistent_layer)
-        found_message = message_elems[0].text
+        found_message = exception_elems[0].text
         self.assertIn(
             expected_message, found_message,
             'Expected error message containing "{}", found "{}". Url: {}'.format(
@@ -4440,23 +4434,259 @@ class TestDateService(unittest.TestCase):
                 'Response for url: {} is not valid xml. Error: {}'.format(
                     url, e))
 
-        message_elems = response_dom.findall('{*}Message')
-        self.assertNotEqual(
-            len(message_elems), 0,
-            '<Message> not found in error response. Url: {}'.format(url))
         self.assertEqual(
-            len(message_elems), 1,
-            'Incorrect number of <Message> elements found -- should only be 1. Url: {}'
-            .format(url))
+            r.status_code, 400,
+            'Expected HTTP 400 for duplicate layers layer, got {}. Url: {}'.format(
+                r.status_code, url))
+
+        exception_elems = response_dom.findall('.//{*}ExceptionText')
         
-        # TODO once we resolve https://bugs.earthdata.nasa.gov/projects/GITC/issues/GITC-7806 we should 
-        # be checking the error code status not the message 
-        expected_message = 'Duplicate layer names {}'.format(layer['layer_id'])
-        found_message = message_elems[0].text
+        expected_message = 'Duplicate layer names'
+        found_message = exception_elems[0].text
         self.assertIn(
             expected_message, found_message,
             'Expected error message containing "{}", found "{}". Url: {}'.format(
                 expected_message, found_message, url))
+
+    def test_describe_domains_limit_first_date(self):
+        # Test that limit=1 with no offset returns only the first date
+
+        apache_config = self.set_up_gc_service('test_describe_domains_limit_first',
+                                               'EPSG:4326')
+
+        # Create and write layer config
+        layer = TEST_LAYERS['test_3']
+        layer_config_path = self.write_config_for_test_layer(layer)
+
+        redis_info = None
+        if layer.get('static') == 'false':
+            redis_info = [
+                layer['layer_id'], layer['default'], layer['periods']
+            ]
+            seed_redis_data([redis_info])
+
+        # Download DD file with limit=1
+        url = apache_config['endpoint'] + '?request=describedomains&layer={0}&tilematrixset={1}&limit=1'.format(
+            layer['layer_id'], layer['tilematrixset'])
+        r = requests.get(url)
+
+        if not START_SERVER:
+            os.remove(layer_config_path)
+            if redis_info:
+                remove_redis_layer(redis_info)
+
+        self.assertEqual(
+            r.status_code, 200,
+            'Error downloading DescribeDomains file from url: {}.'.format(url))
+
+        # Parse the XML
+        try:
+            gc_dom = etree.fromstring(r.text.encode())
+        except etree.XMLSyntaxError as e:
+            self.fail(
+                'Response for url: {} is not valid xml. Error: {}'.format(url, e))
+
+        # Get DimensionDomain element
+        dim_domain_elems = gc_dom.findall('{*}DimensionDomain')
+        self.assertNotEqual(
+            len(dim_domain_elems), 0,
+            'DimensionDomain not found in generated DD file. Url: {}'.format(url))
+        dim_domain_elem = dim_domain_elems[0]
+
+        # Verify Domain contains only 1 period (the first one)
+        domain_elems = dim_domain_elem.findall('Domain')
+        periods = domain_elems[0].text.split(',') if domain_elems[0].text else []
+        self.assertEqual(
+            len(periods), 1,
+            'Expected 1 period with limit=1, found {}. Url: {}'.format(len(periods), url))
+
+        # Verify it's the first period from the layer
+        expected_first_period = layer['periods'][0]
+        self.assertEqual(
+            periods[0], expected_first_period,
+            'Expected first period "{}", found "{}". Url: {}'.format(expected_first_period, periods[0], url))
+
+    def test_describe_domains_limit_with_offset(self):
+        # Test that limit=5 with offset=5 returns dates 6-10
+
+        apache_config = self.set_up_gc_service('test_describe_domains_limit_offset',
+                                               'EPSG:4326')
+
+        # Create and write layer config
+        layer = TEST_LAYERS['test_3']
+        layer_config_path = self.write_config_for_test_layer(layer)
+
+        redis_info = None
+        if layer.get('static') == 'false':
+            redis_info = [
+                layer['layer_id'], layer['default'], layer['periods']
+            ]
+            seed_redis_data([redis_info])
+
+        # Download DD file with limit=5 and offset=5
+        url = apache_config['endpoint'] + '?request=describedomains&layer={0}&tilematrixset={1}&limit=5&offset=5'.format(
+            layer['layer_id'], layer['tilematrixset'])
+        r = requests.get(url)
+
+        if not START_SERVER:
+            os.remove(layer_config_path)
+            if redis_info:
+                remove_redis_layer(redis_info)
+
+        self.assertEqual(
+            r.status_code, 200,
+            'Error downloading DescribeDomains file from url: {}.'.format(url))
+
+        # Parse the XML
+        try:
+            gc_dom = etree.fromstring(r.text.encode())
+        except etree.XMLSyntaxError as e:
+            self.fail(
+                'Response for url: {} is not valid xml. Error: {}'.format(url, e))
+
+        # Get DimensionDomain element
+        dim_domain_elems = gc_dom.findall('{*}DimensionDomain')
+        self.assertNotEqual(
+            len(dim_domain_elems), 0,
+            'DimensionDomain not found in generated DD file. Url: {}'.format(url))
+        dim_domain_elem = dim_domain_elems[0]
+
+        # Verify Domain contains exactly 5 periods
+        domain_elems = dim_domain_elem.findall('Domain')
+        periods = domain_elems[0].text.split(',') if domain_elems[0].text else []
+        self.assertEqual(
+            len(periods), 5,
+            'Expected 5 periods with limit=5, found {}. Url: {}'.format(len(periods), url))
+
+        # Verify these are periods at indices 5-9 (dates 6-10)
+        expected_periods = layer['periods'][5:10]
+        self.assertEqual(
+            periods, expected_periods,
+            'Expected periods {}, found {}. Url: {}'.format(expected_periods, periods, url))
+
+    def test_describe_domains_limit_large(self):
+        # Test that limit=50000 returns that many dates
+
+        apache_config = self.set_up_gc_service('test_describe_domains_limit_large',
+                                               'EPSG:4326')
+
+        # Create and write layer config using test_4 which has 50,005 periods
+        layer = TEST_LAYERS['test_4']
+        layer_config_path = self.write_config_for_test_layer(layer)
+
+        redis_info = None
+        if layer.get('static') == 'false':
+            redis_info = [
+                layer['layer_id'], layer['default'], layer['periods']
+            ]
+            seed_redis_data([redis_info])
+
+        # Download DD file with limit=50000
+        url = apache_config['endpoint'] + '?request=describedomains&layer={0}&tilematrixset={1}&limit=25001'.format(
+            layer['layer_id'], layer['tilematrixset'])
+        r = requests.get(url)
+
+        if not START_SERVER:
+            os.remove(layer_config_path)
+            if redis_info:
+                remove_redis_layer(redis_info)
+
+        self.assertEqual(
+            r.status_code, 200,
+            'Error downloading DescribeDomains file from url: {}.'.format(url))
+
+        # Parse the XML
+        try:
+            gc_dom = etree.fromstring(r.text.encode())
+        except etree.XMLSyntaxError as e:
+            self.fail(
+                'Response for url: {} is not valid xml. Error: {}'.format(url, e))
+
+        # Get DimensionDomain element
+        dim_domain_elems = gc_dom.findall('{*}DimensionDomain')
+        self.assertNotEqual(
+            len(dim_domain_elems), 0,
+            'DimensionDomain not found in generated DD file. Url: {}'.format(url))
+        dim_domain_elem = dim_domain_elems[0]
+
+        # Verify Size element shows total count (50,005)
+        size_elems = dim_domain_elem.findall('Size')
+        self.assertEqual(
+            size_elems[0].text, str(PAGINATION_TEST_LAYER_PERIODS),
+            '<Size> element should show total count of {}. Url: {}'.format(PAGINATION_TEST_LAYER_PERIODS, url))
+
+        # Verify Domain contains exactly 25,001 periods
+        domain_elems = dim_domain_elem.findall('Domain')
+        periods = domain_elems[0].text.split(',') if domain_elems[0].text else []
+        self.assertEqual(
+            len(periods), 25001,
+            'Expected 25001 periods with limit=25001, found {}. Url: {}'.format(len(periods), url))
+
+    def test_gc_invalid_request_parameter_returns_400(self):
+        # Test that invalid REQUEST parameter returns HTTP 400
+        apache_config = self.set_up_gc_service('test_gc_invalid_request',
+                                            'EPSG:4326')
+
+        # Create a layer config
+        layer = TEST_LAYERS['test_1']
+        layer_config_path = self.write_config_for_test_layer(layer)
+
+        # Request with invalid REQUEST parameter
+        url = apache_config['endpoint'] + '?request=InvalidRequest'
+        r = requests.get(url)
+
+        if not DEBUG:
+            os.remove(layer_config_path)
+
+        # Check that the response returns 400 Bad Request
+        self.assertEqual(
+            r.status_code, 400,
+            'Expected HTTP 400 for invalid REQUEST parameter, got {}. Url: {}'.format(
+                r.status_code, url))
+
+    def test_gc_missing_request_parameter_returns_400(self):
+        # Test that missing REQUEST parameter returns HTTP 400
+        apache_config = self.set_up_gc_service('test_gc_missing_request',
+                                            'EPSG:4326')
+
+        # Create a layer config
+        layer = TEST_LAYERS['test_1']
+        layer_config_path = self.write_config_for_test_layer(layer)
+
+        # Request without REQUEST parameter
+        url = apache_config['endpoint']
+        r = requests.get(url)
+
+        if not DEBUG:
+            os.remove(layer_config_path)
+
+        # Check that the response returns 400 Bad Request
+        self.assertEqual(
+            r.status_code, 400,
+            'Expected HTTP 400 for missing REQUEST parameter, got {}. Url: {}'.format(
+                r.status_code, url))
+
+    def test_gc_invalid_layer_returns_404(self):
+        # Test that requesting an invalid layer returns HTTP 404
+        apache_config = self.set_up_gc_service('test_gc_invalid_layer_status',
+                                            'EPSG:4326')
+
+        # Create a layer config
+        layer = TEST_LAYERS['test_1']
+        layer_config_path = self.write_config_for_test_layer(layer)
+
+        # Request with invalid layer
+        url = apache_config['endpoint'] + '?request=wmtsgetcapabilities&layer=InvalidLayer'
+        r = requests.get(url)
+
+        if not DEBUG:
+            os.remove(layer_config_path)
+
+        # Check that the response returns 404 Bad Request
+        self.assertEqual(
+            r.status_code, 404,
+            'Expected HTTP 404 for invalid layer, got {}. Url: {}'.format(
+                r.status_code, url))
 
     @classmethod
     def tearDownClass(self):

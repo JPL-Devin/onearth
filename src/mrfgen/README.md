@@ -143,6 +143,7 @@ These parameters are available but not used in the example above nor necessarily
 * num_cores: (int) number of cores to use with mrf_parallel. Recommended is 2-4, depending on number of input files.
 * mrf_strict_palette: (true/false) Validate that the colors in input files match the MRF colormap. An error is sent if there are mismatches. Defaults to "false".
 * mrf_overwrite_colormap: (true/false) Overwrite the image palette using the GIBS colormap file specified with the "colormap" option. Defaults to "false".
+* mrf_brunsli: (true/false) Store JPEG tiles inside the MRF as [Brunsli](https://github.com/google/brunsli)-compressed JPEGs (`.pjg` data file payload becomes Brunsli `.brn` byte streams). Brunsli is a lossless JPEG repacker that typically reduces JPEG storage by ~22% while remaining fully reversible to the original JPEG bytes by `mod_brunsli` at serve time. Only meaningful for JPEG-family `mrf_compression_type` values (`JPEG`, `JPG`, `ZEN`); ignored for `PNG`/`PPNG`/`JPNG`/`TIFF`/`LERC`. Defaults to "false". See "Brunsli Compression" below for behavior details.
 * background: (black/white/transparent) Forces background color of an image to be black, white, or transparent. Defaults to nothing to avoid extra processing.
 
 Let's modify the previous sample configuration to reproject the imagery into Web Mercator (EPSG:3857), generate a larger output size, and utilize a colormap:
@@ -215,6 +216,31 @@ The MRF format has another efficiency, which is the empty block. The empty block
 Adding an empty block to the MRF can be done two ways. First is to seed the MRF with the empty block. To seed the MRF with the empty block, copy the empty block to the name of the MRF output before running gdal_translate. The second method is to append the empty block to the end of the MRF. Appending should be done after adding the pyramid. The location of the empty block will be configured when the system is set up.
 
 **When using the OnEarth system to serve palette color images to a Google Earth client:** Where the empty block is transparent, the color vectors and transparency vector must all be 256 elements. Otherwise the transparent empty block will appear opaque black.
+
+### Brunsli Compression
+
+[Brunsli](https://github.com/google/brunsli) is a lossless JPEG repacker (the reference codec underlying JPEG XL's JPEG container) that typically reduces stored JPEG size by ~22% while remaining bit-exact reversible to the original JPEG bytes. mrfgen can store the JPEG tiles inside an MRF as Brunsli-packed bytes by setting `<mrf_brunsli>true</mrf_brunsli>`. At serve time, `mod_brunsli` unpacks the bytes back to standard JPEG before they leave Apache, so clients still receive ordinary `image/jpeg`.
+
+#### Default behavior
+
+* `mrf_brunsli` defaults to `false`. When omitted (or set to `false`), JPEG tiles are stored as standard JPEG and mrfgen passes `-co OPTIONS=JFIF:on` to `gdal_translate` so that each stored tile includes a JFIF marker and is directly viewable.
+* When `mrf_brunsli` is `true`, mrfgen omits the `JFIF:on` option — the JFIF marker is dropped on write so the JPEG payload is Brunsli-friendly. The resulting `.pjg` data file holds Brunsli byte streams (a `.brn`-style payload) rather than raw JFIF JPEGs.
+* `mrf_brunsli` is only consulted for JPEG-family compression types. Setting it `true` with `mrf_compression_type` of `PNG`, `PPNG`, `JPNG`, `EPNG`, `TIFF`, or `LERC` has no effect on the stored tile bytes.
+
+#### Interaction with other compression types
+
+* **`JPEG` / `JPG`** – Standard JPEG MRF. When `mrf_brunsli` is `true`, the stored tiles are Brunsli-packed JPEGs; when `false`, they are standard JFIF JPEGs.
+* **`ZEN` (ZenJPEG)** – ZenJPEG is a JPEG variant that uses a `Zen` chunk to flag fully-transparent (no-data) blocks, allowing JPEG MRFs to support transparency. `ZEN` and `mrf_brunsli` are compatible and complementary: ZenJPEG handles transparency signalling at the per-tile level, and Brunsli compresses each (Zen-marked) JPEG payload. Because of the per-tile MRF conversion step that ZenJPEG requires, expect a longer build than a plain `JPEG` + `mrf_brunsli` pipeline.
+* **`JPNG`** – Blended JPEG/PNG format. mrfgen does not currently apply Brunsli packing to the JPEG legs of a JPNG MRF; `mrf_brunsli` is effectively ignored for `JPNG`.
+* **`PNG` / `PPNG` / `EPNG` / `TIFF` / `LERC`** – Not JPEG-based; `mrf_brunsli` has no effect.
+
+#### Empty tile
+
+If `mrf_brunsli` is `true`, the `mrf_empty_tile_filename` may be supplied either as a regular `.jpg` (the same empty tile used for `JPEG`/`ZEN` MRFs is acceptable) or as a pre-packed `.brn` file. A `.brn` empty tile is rejected unless `mrf_brunsli` is `true`. Sample empty tiles for both forms are provided in [`empty_tiles/`](empty_tiles/) (for example, `Blank_RGB_512.jpg` and `Blank_RGB_512.jpg.brn`).
+
+#### Serving
+
+To serve a Brunsli-packed MRF, the Apache front-end must load `mod_brunsli` and apply the `DBRUNSLI` output filter on the JPEG response so the on-disk Brunsli payload is converted back to standard JPEG for the client. See the `mod_brunsli` configuration in OnEarth's test stack ([`src/test/test_mod_wmts_wrapper.py`](../test/test_mod_wmts_wrapper.py)) for an example Apache config block.
 
 ### Optimizing the Input Size
 
@@ -346,6 +372,109 @@ Options:
                         Logging level for email notifications: ERROR, WARN, or
                         INFO.  Default: ERROR
 ```
+
+## convert_mrf.py
+
+convert_mrf.py is a tool for converting MRFs between different compression formats. It supports conversions between PNG, standard JPEG (ZenJPEG), and Brunsli-compressed JPEG formats.
+
+### Supported Conversions
+
+* **PNG → JPEG (standard/ZenJPEG)**: Fast conversion using GDAL tools with automatic palette expansion (if necessary)
+* **PNG → Brunsli JPEG**: Tile-by-tile conversion with Brunsli compression (~22% smaller than standard JPEG)
+* **JPEG → Brunsli**: Lossless compression of existing JPEG tiles
+* **Brunsli → JPEG**: Lossless decompression back to standard JPEG
+
+### Conversion Methods
+
+1. **Standard method**: Fast bulk conversion using `gdal_translate` (PNG → standard JPEG only)
+2. **Tile-by-tile method**: Extracts and converts tiles individually with parallel processing
+   - Required for: Brunsli output, Brunsli input, or JPEG input
+   - Uses `cbrunsli`/`dbrunsli` for lossless JPEG ↔ Brunsli conversions
+   - Processes tiles concurrently across multiple CPU cores (configurable with `--workers`)
+
+### Usage
+
+```Shell
+Usage: convert_mrf.py <input_mrf> <output_dir> [options]
+
+Positional arguments:
+  input_mrf             Path to input MRF file (local path or s3://bucket/key)
+  output_dir            Output directory for converted MRF (local path or s3://bucket/key)
+
+Options:
+  -h, --help            show this help message and exit
+  -q, --quality QUALITY JPEG quality for PNG→JPEG conversion (default: 80,
+                        ignored for JPEG input)
+  -b, --brunsli         Output brunsli-compressed JPEG (omit for standard
+                        JPEG)
+  -w, --workers WORKERS Number of parallel workers for tile-by-tile processing
+                        (default: CPU count, only used for Brunsli conversions)
+  -t, --temp-dir TEMP_DIR
+                        Temporary directory for intermediate files
+  -n, --no-cleanup      Don't delete temporary files after conversion
+  -s, --sigevent-url SIGEVENT_URL
+                        URL for sigevent monitoring (optional)
+  -o, --output-name OUTPUT_NAME
+                        Custom output MRF filename (optional, defaults to
+                        input filename)
+```
+
+**S3 Support**: Both input and output paths can be S3 URIs in the format `s3://bucket-name/key/path`. The script will automatically download from S3 when the input is an S3 path and upload to S3 when the output is an S3 path. AWS credentials must be configured (via environment variables, AWS credentials file, or IAM role).
+
+### Examples
+
+Convert PNG to standard JPEG (fastest):
+```Shell
+python3 convert_mrf.py png_input.mrf output_dir/
+```
+
+Convert PNG to Brunsli-compressed JPEG:
+```Shell
+python3 convert_mrf.py png_input.mrf output_dir/ --brunsli
+# Or using short option:
+python3 convert_mrf.py png_input.mrf output_dir/ -b
+```
+
+Convert JPEG to Brunsli with 8 parallel workers (lossless):
+```Shell
+python3 convert_mrf.py jpeg_input.mrf output_dir/ --brunsli --workers 8
+# Or using short options:
+python3 convert_mrf.py jpeg_input.mrf output_dir/ -b -w 8
+```
+
+Convert Brunsli back to JPEG (lossless):
+```Shell
+python3 convert_mrf.py brunsli_input.mrf output_dir/
+```
+
+Custom JPEG quality and output filename:
+```Shell
+python3 convert_mrf.py input.mrf output_dir/ --quality 90 --output-name custom_name.mrf
+# Or using short options:
+python3 convert_mrf.py input.mrf output_dir/ -q 90 -o custom_name.mrf
+```
+
+Convert from S3 to S3:
+```Shell
+python3 convert_mrf.py s3://my-bucket/input/layer.mrf s3://my-bucket/output/
+```
+
+Convert from S3 to local:
+```Shell
+python3 convert_mrf.py s3://my-bucket/input/layer.mrf /local/output/
+```
+
+Convert from local to S3:
+```Shell
+python3 convert_mrf.py /local/input/layer.mrf s3://my-bucket/output/
+```
+
+### Notes
+
+* Overviews are preserved in all conversions
+* For PNG → Brunsli, overviews are regenerated; for JPEG → Brunsli, existing overviews are converted
+* S3 operations require AWS credentials to be configured (environment variables, credentials file, or IAM role)
+* When using S3 paths, the script automatically handles downloading input files and uploading output files
 
 ## Contact
 

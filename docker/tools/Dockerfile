@@ -1,6 +1,7 @@
 # This Dockerfile must be run from source root
 FROM almalinux:10.0
 
+ARG MRF_VERSION=3.0.3
 ARG ALMALINUX_VERSION=10
 ARG GDAL_VERSION=3.13.2
 ENV GDAL_VERSION=$GDAL_VERSION
@@ -30,12 +31,12 @@ RUN dnf -y update && \
         libjpeg-turbo-devel-3.0.2 \
         libxml2-devel-2.12.5 \
         luarocks-3.9.2 \
-        redis-7.2.4 \
+        valkey-compat-redis-8.0.7 \
         cronie-1.7.0 \
         logrotate-3.22.0 \
         fribidi-devel-1.0.14 \
         cairo-devel-1.18.2 \
-        cmake-3.30.5 \
+        cmake-3.31.8 \
         harfbuzz-devel-8.4.0 \
         proj-9.6.0 \
         proj-devel-9.6.0 \
@@ -55,7 +56,7 @@ RUN cd /tmp && \
 # libspatialindex
 WORKDIR /tmp
 RUN wget https://download.osgeo.org/libspatialindex/spatialindex-src-1.8.5.tar.gz
-RUN tar xzf spatialindex-src-1.8.5.tar.gz 
+RUN tar xzf spatialindex-src-1.8.5.tar.gz
 RUN cd /tmp/spatialindex-src-1.8.5 && \
     ./configure --libdir=/usr/lib64 && \
     make && make install && \
@@ -81,13 +82,26 @@ RUN git clone --depth 1 --branch v${MRF_VERSION} https://github.com/nasa-gibs/mr
     curl "https://raw.githubusercontent.com/OSGeo/gdal/v${GDAL_VERSION}/frmts/mrf/marfa.h" -o /usr/local/include/marfa.h && \
     cd mrf/mrf_apps/ && \
     echo $'PREFIX=/usr/local\nGDAL_ROOT=/usr/local/include/' >> Makefile.lcl && \
-    sed -i 's/mrf_insert jxl/mrf_insert/g' Makefile && \
     sed -i 's/papszOptions) override/papszOptions)/g' /usr/local/include/marfa.h && \
     make && make install && \
     ldconfig && \
     cp *.py /usr/bin/ && \
     cd /tmp/ && \
     rm -rf /tmp/*
+
+# Install brunsli dependency
+WORKDIR /tmp
+RUN git clone --depth=1 https://github.com/google/brunsli.git && \
+    cd brunsli && \
+    git submodule update --init --recursive && \
+    cmake -DCMAKE_PREFIX_PATH=/usr/local/ -DCMAKE_INSTALL_PREFIX=/usr/local/ -DCMAKE_INSTALL_LIBDIR=lib -DCMAKE_BUILD_TYPE=Release -B out && \
+    cmake --build out --config Release && \
+    cd out && make && make install && \
+    cp /tmp/brunsli/out/artifacts/cbrunsli /usr/local/bin/ && \
+    cp /tmp/brunsli/out/artifacts/dbrunsli /usr/local/bin/ && \
+    export LD_LIBRARY_PATH=:/usr/local/lib && \
+    ldconfig && \
+    cd /tmp/ && rm -rf /tmp/brunsli
 
 # Copy OnEarth to home directory
 RUN mkdir -p /home/oe2
@@ -110,7 +124,7 @@ WORKDIR /home/oe2/onearth/src/mrfgen
 RUN gcc -O3 RGBApng2Palpng.c -o RGBApng2Palpng -lpng
 
 # pip updates
-RUN python3 -m pip install --user cython==3.1.2 
+RUN python3 -m pip install --user cython==3.1.2
 RUN python3 setup.py build_ext --inplace
 RUN python3 -m pip install Shapely==2.1.1
 
@@ -127,6 +141,7 @@ RUN install -m 755 src/empty_tile/oe_generate_empty_tile.py -D /usr/bin/oe_gener
     install -m 755 src/mrfgen/overtiffpacker.py -D /usr/bin/overtiffpacker.py && \
     install -m 755 src/mrfgen/RGBApng2Palpng -D /usr/bin/RGBApng2Palpng && \
     install -m 755 src/mrfgen/oe_validate_palette.py -D /usr/bin/oe_validate_palette.py && \
+    install -m 755 src/mrfgen/convert_mrf.py -D /usr/bin/convert_mrf.py && \
     install -m 755 src/scripts/oe_utils.py -D /usr/bin/oe_utils.py && \
     install -m 755 src/scripts/twmsbox2wmts.py -D /usr/bin/twmsbox2wmts.py && \
     install -m 755 src/scripts/wmts2twmsbox.py -D /usr/bin/wmts2twmsbox.py && \

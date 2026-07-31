@@ -111,7 +111,6 @@ Service; keys will be positioned in the order configured
 * **reproject**: Configurations specific only to reproject (i.e., mod_reproject)
   * **target_epsg_code**: If a reproject endpoint, this is the target projection that source imagery will be reprojected to
   * **source_gc_uri**: If a reproject endpoint, this is the URI of the source WMTS GetCapabilities endpoint
-  * **replace_with_local**: Replace matching host names with local Docker host IP 172.17.0.1 so that connections stay local
 
 #### Layer Configuration
 
@@ -178,6 +177,14 @@ the date service.
 contianed in separate directories by year, set this to 'true'. This will cause
 the OnEarth modules to append the year of the requested tile to the path of the
 IDX and data files when they are accessed. Defaults to 'false'.
+
+`day_dir` (optional) -- For sub-daily dynamic layers, if the data and IDX files
+are organized into year/day-of-year (YYYY/DDD) directories, set this to 'true'.
+This will cause the OnEarth modules to append both the year and the zero-padded
+day-of-year (001-366) of the requested tile to the path of the IDX and data
+files when they are accessed. This keeps the large number of per-timestep files
+in a sub-daily layer spread across a directory per day rather than all in a
+single directory. Implies `year_dir`. Defaults to 'false'.
 
 `bbox` (required for TWMS) -- Bounding box of the source MRF in the projection's
 native units.
@@ -292,7 +299,6 @@ command line parameter.
 reprojected to. Note that this projection must have Tile Matrix Sets configured
 in the Tile Matrix Set definition file.
 - `source_gc_uri` (required) -- If a reproject endpoint, this is the URI of the source WMTS GetCapabilities endpoint.
-- `replace_with_local` (optional) -- Replace matching host names with local Docker host IP 172.17.0.1 (or custom server name, if different) so that connections stay local
 
 **wmts_service options**
 

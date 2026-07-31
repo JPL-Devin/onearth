@@ -43,6 +43,7 @@
 #include <apr_lib.h>
 #include <apr_escape.h>
 #include <http_log.h>
+#include <time.h>
 #include "mod_wmts_wrapper.h"
 #include "receive_context.h"
 #include <jansson.h>
@@ -687,6 +688,17 @@ static int pre_hook(request_rec *r)
         if (datetime_str == NULL 
             || ap_regexec(cfg->date_regexp, datetime_str, 0, NULL, 0) == AP_REG_NOMATCH 
             && apr_strnatcasecmp(datetime_str, "default") != 0) {
+            // The time parameter occupies position (nelts-5) in r->uri.
+            // If time was omitted, that slot holds the style name ("default") instead.
+            // Use this to distinguish a missing time with a TMS error from a malformed time.
+            apr_array_header_t *uri_tokens = tokenize(r->pool, r->uri, '/');
+            const char *time_slot = uri_tokens->nelts >= 5
+                ? (const char *)APR_ARRAY_IDX(uri_tokens, uri_tokens->nelts - 5, const char *)
+                : NULL;
+            if (time_slot && apr_strnatcasecmp(time_slot, "default") == 0) {
+                wmts_errors[errors++] = wmts_make_error(400,"InvalidParameterValue","TILEMATRIXSET", "TILEMATRIXSET is invalid for LAYER");
+                return wmts_return_all_errors(r, errors, wmts_errors);
+            }
             wmts_errors[errors++] = wmts_make_error(400,"InvalidParameterValue","TIME", "Invalid time format, must be YYYY-MM-DD or YYYY-MM-DDThh:mm:ssZ");
         }
 
@@ -813,6 +825,22 @@ static int pre_hook(request_rec *r)
 
                     const char *year = apr_pstrndup(r->pool, date_string, 4);
 
+                    // Compute the zero-padded day-of-year (DDD, 001-366) from the
+                    // snapped date string ("YYYY-MM-DD" or "YYYY-MM-DDThh:mm:ssZ")
+                    // for sub-daily products stored in a YYYY/DDD directory layout.
+                    const char *doy = NULL;
+                    if (cfg->day_dir) {
+                        struct tm date_tm;
+                        memset(&date_tm, 0, sizeof(date_tm));
+                        if (sscanf(date_string, "%4d-%2d-%2d", &date_tm.tm_year, &date_tm.tm_mon, &date_tm.tm_mday) == 3) {
+                            date_tm.tm_year -= 1900;
+                            date_tm.tm_mon -= 1;
+                            // timegm() normalizes the struct and populates tm_yday (0-based)
+                            timegm(&date_tm);
+                            doy = apr_psprintf(r->pool, "%03d", date_tm.tm_yday + 1);
+                        }
+                    }
+
                     // find and replace data source file name variables
                     apr_array_header_t *mrf_cfg_src_arr_update = apr_array_copy(r->pool, mrf_config->source);
                     vfile_t *mrf_cfg_first_src_update = &APR_ARRAY_IDX(mrf_cfg_src_arr_update, 0, vfile_t);
@@ -822,6 +850,8 @@ static int pre_hook(request_rec *r)
                     mrf_cfg_first_name_update = (char *)find_and_replace_string(r->pool, "${filename}", mrf_cfg_first_name_update, filename);
                     if (cfg->year_dir)
                         mrf_cfg_first_name_update = (char *)find_and_replace_string(r->pool, "${YYYY}", mrf_cfg_first_name_update, year);
+                    if (doy)
+                        mrf_cfg_first_name_update = (char *)find_and_replace_string(r->pool, "${DDD}", mrf_cfg_first_name_update, doy);
                     mrf_cfg_first_src_update->name = mrf_cfg_first_name_update;
                     out_cfg->source = mrf_cfg_src_arr_update;
                     vfile_t *mrf_cfg_out_src = &APR_ARRAY_IDX(out_cfg->source, 0, vfile_t);
@@ -837,6 +867,9 @@ static int pre_hook(request_rec *r)
                     // Add the year dir to the IDX filename if that option is configured
                     if (cfg->year_dir)
                         out_cfg->idx.name = (char *)find_and_replace_string(r->pool, "${YYYY}", out_cfg->idx.name, year);
+                    // Add the day-of-year dir to the IDX filename for sub-daily YYYY/DDD layouts
+                    if (doy)
+                        out_cfg->idx.name = (char *)find_and_replace_string(r->pool, "${DDD}", out_cfg->idx.name, doy);
                     ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r, "step=begin_onearth_handle, mrf_config_idx_name=%s", out_cfg->idx.name);
                     // Check that idx exists
                     if ( access( out_cfg->idx.name, F_OK ) != -1 ) {
@@ -977,6 +1010,13 @@ static const char *enable_year_dir(cmd_parms *cmd, void *dconf, int arg)
     return NULL;
 }
 
+static const char *enable_day_dir(cmd_parms *cmd, void *dconf, int arg)
+{
+    wmts_wrapper_conf *cfg = (wmts_wrapper_conf *)dconf;
+    cfg->day_dir = arg;
+    return NULL;
+}
+
 static const char *set_mime_type(cmd_parms *cmd, void *dconf, const char *format)
 {
     wmts_wrapper_conf *cfg = (wmts_wrapper_conf *)dconf;
@@ -1033,6 +1073,7 @@ static void* merge_dir_conf(apr_pool_t *p, void *BASE, void *ADD) {
     cfg->mime_type = ( add->mime_type == NULL ) ? base->mime_type : add->mime_type;
     cfg->time_lookup_uri = ( add->time_lookup_uri == NULL ) ? base->time_lookup_uri : add->time_lookup_uri;
     cfg->year_dir = ( add->year_dir == NULL ) ? base->year_dir : add->year_dir;
+    cfg->day_dir = ( add->day_dir == NULL ) ? base->day_dir : add->day_dir;
     cfg->layer_alias = ( add->layer_alias == NULL ) ? base->layer_alias : add->layer_alias;
     cfg->date_service_keys = ( add->date_service_keys == NULL ) ? base->date_service_keys : add->date_service_keys;
     cfg->base_path = ( add->base_path == NULL ) ? base->base_path : add->base_path;
@@ -1087,6 +1128,14 @@ static const command_rec cmds[] =
         0, // Self pass argument
         ACCESS_CONF,
         "Add year directories when looking up index files"
+    ),
+
+    AP_INIT_FLAG(
+        "WMTSWrapperEnableDayDir",
+        (cmd_func) enable_day_dir, // Callback
+        0, // Self pass argument
+        ACCESS_CONF,
+        "Add day-of-year (DDD) directories when looking up index files for sub-daily layers"
     ),
 
     AP_INIT_TAKE1(
