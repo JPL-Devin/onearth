@@ -88,8 +88,9 @@ RUN cd /tmp/spatialindex-src-1.8.5 && \
 # Install GDAL
 ENV LD_LIBRARY_PATH=:/usr/local/lib
 WORKDIR /tmp
-RUN wget -P /tmp/ https://github.com/nasa-gibs/gibs-gdal/releases/download/v${GDAL_VERSION}-${GIBS_GDAL_RELEASE}/gibs-gdal-${GDAL_VERSION}-${GIBS_GDAL_RELEASE}.el${ALMALINUX_VERSION}.${ARCH}.rpm && \
-    rpm -i gibs-gdal-${GDAL_VERSION}-${GIBS_GDAL_RELEASE}.el${ALMALINUX_VERSION}.${ARCH}.rpm && \
+RUN ARCH=$(uname -m) && \
+    wget -P /tmp/ https://github.com/nasa-gibs/gibs-gdal/releases/download/v${GDAL_VERSION}-${GIBS_GDAL_RELEASE}/gdal-${GDAL_VERSION}-${GIBS_GDAL_RELEASE}.el${ALMALINUX_VERSION}.${ARCH}.rpm && \
+    rpm -i /tmp/gdal-${GDAL_VERSION}-${GIBS_GDAL_RELEASE}.el${ALMALINUX_VERSION}.${ARCH}.rpm && \
     rm -rf /tmp/*
 
 # Fix outdated packaging installed in this environment. It does not support the "strip_trailing_zero" argument in
