@@ -1,12 +1,12 @@
 # This Dockerfile must be run from source root
-FROM nasagibs/onearth-deps:2.9.8
+FROM nasagibs/onearth-deps:2.10.0
 
-ARG MRF_VERSION=3.0.3
 ARG ALMALINUX_VERSION=10
 ARG GDAL_VERSION=3.13.2
 ENV GDAL_VERSION=$GDAL_VERSION
 ARG GIBS_GDAL_RELEASE=1
 ENV GIBS_GDAL_RELEASE=$GIBS_GDAL_RELEASE
+ARG MRF_VERSION=3.0.3
 
 # CLEAN UP OLD CMAKE FROM BASE IMAGE
 RUN rm -f /usr/local/bin/cmake \
@@ -241,7 +241,7 @@ RUN perl -pi -e "s/LogLevel warn/LogLevel debug/g" /etc/httpd/conf/httpd.conf &&
 RUN cp /home/oe2/onearth/docker/00-mpm.conf /etc/httpd/conf.modules.d/ && \
     cp /home/oe2/onearth/docker/10-worker.conf /etc/httpd/conf.modules.d/
 
-ENV ONEARTH_VERSION=2.9.8
+ENV ONEARTH_VERSION=2.10.0
 
 # Generate SSL certs
 RUN /usr/libexec/httpd-ssl-gencerts
