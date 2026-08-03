@@ -648,7 +648,7 @@ def usage():
    print("  -f FACTOR, --factor FACTOR")
    print("                     Floating point value used as factor when calculating raw data values from SLD values.  (Optional)")
    print("  -r RGBA_ORDER , --rgba_order RGBA_ORDER")
-   print("                     The RGBA ordering to be used when parsing the SLD v1.1.0 fallbackValue.")
+   print("                     The RGBA ordering to be used when parsing the SLD v1.1.0/v1.3.0 fallbackValue.")
    print("                     The alpha value is optional.  Sample values \"RGB\", \"ARGB\"")
    print("  -p PRECISION, --precision PRECISION")
    print("                     The number of decimal places to round values to plus the format specifier for floating point (f) ")
@@ -716,7 +716,8 @@ def main(argv):
     if 'version' in attrDict:
         if attrDict['version'] == "1.0.0":
             gibsColorMaps = parseSLD_v1_0_0(sldFile, layerName, units, offset, factor, format)
-        elif attrDict['version'] == "1.1.0":
+        elif attrDict['version'] in ("1.1.0", "1.3.0"):
+            # SLD 1.3.0 documents use the same Symbology Encoding (se:) elements as 1.1.0
             gibsColorMaps = parseSLD_v1_1_0(sldFile, layerName, units, offset, factor, rgbaOrder, format, densify)
         else:
             print(("Invalid version specified: " + attrDict['version']))
