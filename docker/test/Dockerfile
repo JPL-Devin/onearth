@@ -1,15 +1,25 @@
 # This Dockerfile must be run from source root
-FROM nasagibs/onearth-deps:2.9.8
+FROM nasagibs/onearth-deps:2.10.0
 
-ARG MRF_VERSION=3.0.3
 ARG ALMALINUX_VERSION=10
-ARG GDAL_VERSION=3.6.4
+ARG GDAL_VERSION=3.13.2
 ENV GDAL_VERSION=$GDAL_VERSION
-ARG GIBS_GDAL_RELEASE=3
+ARG GIBS_GDAL_RELEASE=1
 ENV GIBS_GDAL_RELEASE=$GIBS_GDAL_RELEASE
+ARG MRF_VERSION=3.0.3
+
+# CLEAN UP OLD CMAKE FROM BASE IMAGE
+RUN rm -f /usr/local/bin/cmake \
+          /usr/local/bin/ctest \
+          /usr/local/bin/cpack \
+          /usr/local/bin/ccmake && \
+    rm -rf /usr/local/share/cmake*
 
 # Install dependencies
 RUN dnf install -y \
+        gcc \
+        gcc-c++ \
+        make \
         proj-9.6.0 \
         proj-devel-9.6.0 \
         fribidi-devel-1.0.14 \
@@ -78,8 +88,9 @@ RUN cd /tmp/spatialindex-src-1.8.5 && \
 # Install GDAL
 ENV LD_LIBRARY_PATH=:/usr/local/lib
 WORKDIR /tmp
-RUN wget -P /tmp/ https://github.com/nasa-gibs/gibs-gdal/releases/download/v${GDAL_VERSION}-${GIBS_GDAL_RELEASE}/gibs-gdal-${GDAL_VERSION}-${GIBS_GDAL_RELEASE}.el${ALMALINUX_VERSION}.x86_64.rpm && \
-    rpm -i gibs-gdal-${GDAL_VERSION}-${GIBS_GDAL_RELEASE}.el${ALMALINUX_VERSION}.x86_64.rpm && \
+RUN ARCH=$(uname -m) && \
+    wget -P /tmp/ https://github.com/nasa-gibs/gibs-gdal/releases/download/v${GDAL_VERSION}-${GIBS_GDAL_RELEASE}/gibs-gdal-${GDAL_VERSION}-${GIBS_GDAL_RELEASE}.el${ALMALINUX_VERSION}.${ARCH}.rpm && \
+    rpm -i /tmp/gibs-gdal-${GDAL_VERSION}-${GIBS_GDAL_RELEASE}.el${ALMALINUX_VERSION}.${ARCH}.rpm && \
     rm -rf /tmp/*
 
 # Fix outdated packaging installed in this environment. It does not support the "strip_trailing_zero" argument in
@@ -105,11 +116,11 @@ RUN git clone --depth 1 --branch v${MRF_VERSION} https://github.com/nasa-gibs/mr
 # Mapserver
 RUN dnf install -y harfbuzz-devel-8.4.0 cairo-devel-1.18.2
 WORKDIR /tmp
-RUN wget http://download.osgeo.org/mapserver/mapserver-8.2.2.tar.gz && \
-    tar xf mapserver-8.2.2.tar.gz
-WORKDIR /tmp/mapserver-8.2.2
+RUN wget http://download.osgeo.org/mapserver/mapserver-8.6.5.tar.gz && \
+    tar xf mapserver-8.6.5.tar.gz
+WORKDIR /tmp/mapserver-8.6.5
 RUN mkdir build
-WORKDIR /tmp/mapserver-8.2.2/build
+WORKDIR /tmp/mapserver-8.6.5/build
 RUN cmake -DCMAKE_INSTALL_PREFIX=/usr/local -DWITH_POSTGIS=0 -DWITH_GIF=0 -DWITH_KML=1 -DWITH_PROTOBUFC=0 ../
 RUN make && make install
 RUN echo '/usr/local/lib' > /etc/ld.so.conf.d/mapserver.conf
@@ -230,7 +241,7 @@ RUN perl -pi -e "s/LogLevel warn/LogLevel debug/g" /etc/httpd/conf/httpd.conf &&
 RUN cp /home/oe2/onearth/docker/00-mpm.conf /etc/httpd/conf.modules.d/ && \
     cp /home/oe2/onearth/docker/10-worker.conf /etc/httpd/conf.modules.d/
 
-ENV ONEARTH_VERSION=2.9.8
+ENV ONEARTH_VERSION=2.10.0
 
 # Generate SSL certs
 RUN /usr/libexec/httpd-ssl-gencerts

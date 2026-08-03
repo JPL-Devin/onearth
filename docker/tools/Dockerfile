@@ -1,12 +1,12 @@
 # This Dockerfile must be run from source root
 FROM almalinux:10.0
 
-ARG MRF_VERSION=3.0.3
 ARG ALMALINUX_VERSION=10
-ARG GDAL_VERSION=3.6.4
+ARG GDAL_VERSION=3.13.2
 ENV GDAL_VERSION=$GDAL_VERSION
-ARG GIBS_GDAL_RELEASE=3
+ARG GIBS_GDAL_RELEASE=1
 ENV GIBS_GDAL_RELEASE=$GIBS_GDAL_RELEASE
+ARG MRF_VERSION=3.0.3
 
 # Install dependencies
 RUN dnf -y update && \
@@ -68,8 +68,9 @@ RUN cd /tmp/spatialindex-src-1.8.5 && \
 RUN pip install --force-reinstall numpy==1.26.4
 ENV LD_LIBRARY_PATH=:/usr/local/lib
 WORKDIR /tmp
-RUN wget -P /tmp/ https://github.com/nasa-gibs/gibs-gdal/releases/download/v${GDAL_VERSION}-${GIBS_GDAL_RELEASE}/gibs-gdal-${GDAL_VERSION}-${GIBS_GDAL_RELEASE}.el${ALMALINUX_VERSION}.x86_64.rpm && \
-    rpm -i gibs-gdal-${GDAL_VERSION}-${GIBS_GDAL_RELEASE}.el{$ALMALINUX_VERSION}.x86_64.rpm && \
+RUN ARCH=$(uname -m) && \
+RUN wget -P /tmp/ https://github.com/nasa-gibs/gibs-gdal/releases/download/v${GDAL_VERSION}-${GIBS_GDAL_RELEASE}/gibs-gdal-${GDAL_VERSION}-${GIBS_GDAL_RELEASE}.el${ALMALINUX_VERSION}.${ARCH}.rpm && \
+    rpm -i gibs-gdal-${GDAL_VERSION}-${GIBS_GDAL_RELEASE}.el${ALMALINUX_VERSION}.${ARCH}.rpm && \
     rm -rf /tmp/*
 
 # Fix python gdal install

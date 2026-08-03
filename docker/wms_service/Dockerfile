@@ -1,12 +1,12 @@
 ARG ONEARTH_VERSION
 FROM nasagibs/onearth-deps:$ONEARTH_VERSION
 
-ARG MRF_VERSION=3.0.3
-ARG GDAL_VERSION=3.6.4
 ARG ALMALINUX_VERSION=10
+ARG GDAL_VERSION=3.13.2
 ENV GDAL_VERSION=$GDAL_VERSION
-ARG GIBS_GDAL_RELEASE=3
+ARG GIBS_GDAL_RELEASE=1
 ENV GIBS_GDAL_RELEASE=$GIBS_GDAL_RELEASE
+ARG MRF_VERSION=3.0.3
 
 RUN dnf install -y \
         proj-9.6.0 \
@@ -22,10 +22,11 @@ RUN dnf install -y \
 
 # FastCGI
 RUN cd /tmp && \
-    wget https://dl.fedoraproject.org/pub/epel/10/Everything/x86_64/Packages/f/fcgi-2.4.7-1.el10_2.x86_64.rpm && \
-    wget https://dl.fedoraproject.org/pub/epel/10/Everything/x86_64/Packages/f/fcgi-devel-2.4.7-1.el10_2.x86_64.rpm && \
-    dnf install -y ./fcgi-2.4.7-1.el10_2.x86_64.rpm ./fcgi-devel-2.4.7-1.el10_2.x86_64.rpm && \
-	dnf clean all
+    ARCH=$(uname -m) && \
+    wget https://dl.fedoraproject.org/pub/epel/10/Everything/${ARCH}/Packages/f/fcgi-2.4.7-1.el10_2.${ARCH}.rpm && \
+    wget https://dl.fedoraproject.org/pub/epel/10/Everything/${ARCH}/Packages/f/fcgi-devel-2.4.7-1.el10_2.${ARCH}.rpm && \
+    dnf install -y ./fcgi-2.4.7-1.el10_2.${ARCH}.rpm ./fcgi-devel-2.4.7-1.el10_2.${ARCH}.rpm && \
+    dnf clean all
 
 # Some environments don't like git:// links, so we need to workaround that with certain lua dependencies
 WORKDIR /tmp
@@ -66,11 +67,11 @@ RUN pip install pip==26.1.2
 RUN pip install -r requirements.txt
 
 # Install GDAL
-#RUN pip install --force-reinstall numpy
 ENV LD_LIBRARY_PATH=:/usr/local/lib
 WORKDIR /tmp
-RUN wget -P /tmp/ https://github.com/nasa-gibs/gibs-gdal/releases/download/v${GDAL_VERSION}-${GIBS_GDAL_RELEASE}/gibs-gdal-${GDAL_VERSION}-${GIBS_GDAL_RELEASE}.el${ALMALINUX_VERSION}.x86_64.rpm && \
-    rpm -i gibs-gdal-${GDAL_VERSION}-${GIBS_GDAL_RELEASE}.el${ALMALINUX_VERSION}.x86_64.rpm && \
+RUN ARCH=$(uname -m) && \
+    wget -q -P /tmp/ https://github.com/nasa-gibs/gibs-gdal/releases/download/v${GDAL_VERSION}-${GIBS_GDAL_RELEASE}/gibs-gdal-${GDAL_VERSION}-${GIBS_GDAL_RELEASE}.el${ALMALINUX_VERSION}.${ARCH}.rpm && \
+    rpm -i /tmp/gibs-gdal-${GDAL_VERSION}-${GIBS_GDAL_RELEASE}.el${ALMALINUX_VERSION}.${ARCH}.rpm && \
     rm -rf /tmp/*
 
 # Fix outdated packaging installed in this environment. It does not support the "strip_trailing_zero" argument in
@@ -94,13 +95,15 @@ RUN git clone --depth 1 --branch v${MRF_VERSION} https://github.com/nasa-gibs/mr
     rm -rf /tmp/*
 
 # Mapserver
+# Remove the old CMake 3.20 from /usr/local so the shell finds the new CMake 3.30 in /usr/bin
+RUN rm -f /usr/local/bin/cmake /usr/local/bin/ctest /usr/local/bin/cpack
 RUN dnf install -y harfbuzz-devel-8.4.0 cairo-devel-1.18.2
 WORKDIR /tmp
-RUN wget http://download.osgeo.org/mapserver/mapserver-8.2.2.tar.gz
-RUN tar xf mapserver-8.2.2.tar.gz
-WORKDIR /tmp/mapserver-8.2.2
+RUN wget http://download.osgeo.org/mapserver/mapserver-8.6.5.tar.gz
+RUN tar xf mapserver-8.6.5.tar.gz
+WORKDIR /tmp/mapserver-8.6.5
 RUN mkdir build
-WORKDIR /tmp/mapserver-8.2.2/build
+WORKDIR /tmp/mapserver-8.6.5/build
 RUN cmake -DCMAKE_INSTALL_PREFIX=/usr/local -DWITH_POSTGIS=0 -DWITH_GIF=0 -DWITH_KML=1 -DWITH_PROTOBUFC=0 ../
 RUN make && make install
 RUN echo '/usr/local/lib' > /etc/ld.so.conf.d/mapserver.conf

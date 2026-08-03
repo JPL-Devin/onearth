@@ -545,6 +545,10 @@ def gdalmerge(
             "-overwrite",
             "-of",
             "VRT",
+            "-ovr",
+            "NONE",
+            "-r",
+            resize_resampling,
             "-tr",
             str((Decimal(xmax) - Decimal(xmin)) / Decimal(target_x)),
             str((Decimal(ymin) - Decimal(ymax)) / Decimal(target_y)),
@@ -652,7 +656,7 @@ def gdalmerge(
 
 
 def split_across_antimeridian(
-    tile, source_extents, antimeridian, xres, yres, working_dir
+    tile, source_extents, antimeridian, xres, yres, working_dir, resize_resampling="near"
 ):
     """
     Splits up a tile that crosses the antimeridian
@@ -664,9 +668,14 @@ def split_across_antimeridian(
         yres -- output y resolution
         working_dir -- Directory to use for temporary files
     """
+    if not resize_resampling:
+         resize_resampling = "near"
+
     temp_tile = working_dir + os.path.basename(tile) + ".temp.vrt"
     log_info_mssg("Splitting across antimeridian with " + temp_tile)
     ulx, uly, lrx, lry = source_extents
+    orig_lrx = lrx
+
     if Decimal(lrx) <= Decimal(antimeridian):
         # create a new lrx on the other side of the antimeridian
         new_lrx = str(Decimal(lrx) + Decimal(antimeridian) * 2)
@@ -676,6 +685,12 @@ def split_across_antimeridian(
         # this is the output lrx for the right cut
         lrx = str(Decimal(antimeridian) * -1 - (Decimal(antimeridian) - Decimal(lrx)))
 
+    # Calculate correct extents for GDAL 3.12+ -te flag
+    te_xmin = min(float(ulx), float(orig_lrx))
+    te_xmax = max(float(ulx), float(orig_lrx))
+    te_ymin = min(float(uly), float(lry))
+    te_ymax = max(float(uly), float(lry))
+
     # Create VRT of input tile
     gdalbuildvrt_command_list = [
         "gdalwarp",
@@ -683,8 +698,13 @@ def split_across_antimeridian(
         "-of",
         "VRT",
         "-tr",
-        xres,
-        yres,
+        str(xres),
+        str(yres),
+        "-te", 
+        str(te_xmin),      # xmin (Source Lower Right X)
+        str(te_ymin),      # ymin (Source Lower Right Y)
+        str(te_xmax),      # xmax (Source Upper Left X)
+        str(te_ymax),      # ymax (Source Upper Left Y)
         tile,
         temp_tile,
     ]
@@ -854,14 +874,13 @@ def crop_to_extents(tile, tile_extents, projection_extents, working_dir):
     """
     ulx, uly, lrx, lry = tile_extents
     xmin, ymin, xmax, ymax = projection_extents
-    if float(ulx) < float(xmin):
-        ulx = xmin
-    if float(uly) > float(ymax):
-        uly = ymax
-    if float(lrx) > float(xmax):
-        lrx = xmax
-    if float(lry) < float(ymin):
-        lry = ymin
+
+    # Clamp tile extents to the projection bounds and ensure they are cast as strings
+    ulx = str(max(float(ulx), float(xmin)))
+    uly = str(min(float(uly), float(ymax)))
+    lrx = str(min(float(lrx), float(xmax)))
+    lry = str(max(float(lry), float(ymin)))
+
     cut_tile = working_dir + os.path.basename(tile) + "._cut.vrt"
     gdalwarp_command_list = [
         "gdalwarp",
@@ -877,9 +896,19 @@ def crop_to_extents(tile, tile_extents, projection_extents, working_dir):
         cut_tile,
     ]
     log_the_command(gdalwarp_command_list)
-    subprocess.call(
+
+    # Execute the command and capture output to prevent silent failures
+    process = subprocess.Popen(
         gdalwarp_command_list, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-    )
+    )           
+    out, err = process.communicate()
+    
+    # Log an error if the crop fails
+    if process.returncode != 0:
+        log_sig_err("gdalwarp crop_to_extents failed with code {0}: {1}".format(
+            process.returncode, err.decode('utf-8', errors='ignore').strip()
+        ), sigevent_url)
+        
     return cut_tile
 
 
@@ -1171,8 +1200,8 @@ def run_mrf_insert(
 
         elif target_epsg in ["EPSG:4326", "EPSG:3857"] and (
             (float(s_xmin) > float(s_xmax))
-            or (float(s_xmax) > float(t_xmax))
-            or (float(s_xmin) < float(t_xmin))
+            or (round(float(s_xmax), 4) > round(float(t_xmax), 4))
+            or (round(float(s_xmin), 4) < round(float(t_xmin), 4))
         ):
             log_info_mssg(tile + " crosses antimeridian")
             left_half, right_half = split_across_antimeridian(
@@ -1181,7 +1210,7 @@ def run_mrf_insert(
                 t_xmax,
                 str((Decimal(t_xmax) - Decimal(t_xmin)) / Decimal(target_x)),
                 str((Decimal(t_ymin) - Decimal(t_ymax)) / Decimal(target_y)),
-                working_dir,
+                working_dir, resize_resampling,
             )
             if should_lock:
                 lock.up_read()
@@ -1656,14 +1685,25 @@ def run_gdaladdo(overview_resampling, mrf_filename, overview_levels, zlevels):
         zlevels -- The number of zlevels included in the MRF
     """
 
-    idx_filename = mrf_filename.replace(".mrf", ".idx")
+    # Strip GDAL subdataset suffix (e.g. :MRF:Z0) for filesystem operations
+    clean_mrf_filename = mrf_filename.split(':MRF:')[0]
+
+    #idx_filename = mrf_filename.replace(".mrf", ".idx")
+    idx_filename = clean_mrf_filename.replace(".mrf", ".idx")
     compare_time = time.strftime("%Y%m%d.%H%M%S", time.localtime())
-    old_stats = os.stat(idx_filename)
+
+    # Ensure file exists before stat to avoid FileNotFoundError on fresh runs
+    if os.path.exists(idx_filename):
+        old_stats = os.stat(idx_filename)
+    else:
+        # Fallback if idx doesn't exist yet (should exist for valid MRF)
+        old_stats = type('obj', (object,), {'st_size': 0})
 
     # Get largest x,y dimension of MRF, usually x.
     try:
         # Open file.
-        mrf_file = open(mrf_filename, "r+")
+        #mrf_file = open(mrf_filename, "r+")
+        mrf_file = open(clean_mrf_filename, "r+")
     except IOError:
         mssg = str().join(["Cannot read:  ", mrf_filename])
         log_sig_exit("ERROR", mssg, sigevent_url)
@@ -1698,6 +1738,12 @@ def run_gdaladdo(overview_resampling, mrf_filename, overview_levels, zlevels):
         mrf_file.close()
         # Get largest dimension, usually X.
         actual_size = max([float(sizeX), float(sizeY)])
+
+    # Fix for GDAL 3.12+: Map legacy resampling abbreviation to full names
+    # Note that "Nnb" and "Avg" are overview algorithms implemented in MRF Driver
+    # thus we don't alter these names.
+    if overview_resampling.lower() in ['near']:
+        overview_resampling = 'nearest'
 
     # Create the gdaladdo command.
     gdaladdo_command_list = ["gdaladdo", "-r", overview_resampling, str(mrf_filename)]
@@ -2825,6 +2871,12 @@ if source_epsg == "detect" or source_epsg != target_epsg:
             log_info_mssg("Creating VRT for input tile: " + tile)
 
             # if the source and target EPSGs are not the same, create a VRT
+  
+            # Fix legacy names so gdalwarp receives 'near' instead of 'nearest'
+            if reprojection_resampling.lower() in ['nnb', 'nearest']:
+                reprojection_resampling = 'near'
+            elif reprojection_resampling.lower() == 'avg':
+                reprojection_resampling = 'average'
 
             gdalwarp_command_list = [
                 "gdalwarp",
@@ -2832,6 +2884,8 @@ if source_epsg == "detect" or source_epsg != target_epsg:
                 "-overwrite",
                 "-of",
                 "vrt",
+                "-r",
+                reprojection_resampling,
                 "-s_srs",
                 s_epsg,
                 "-t_srs",
@@ -3106,6 +3160,7 @@ log_info_mssg(all_tiles_filename)
 # Begin GDAL processing.
 # -------------------------------------------------------------------------------
 
+
 # Convert date of the data into day of the year.  Requred for TWMS server.
 doy = get_doy_string(date_of_data)
 # Combine year and doy to conform to TWMS convention (yyyydoy).
@@ -3164,6 +3219,12 @@ remove_file(mrf_filename)
 remove_file(idx_filename)
 remove_file(out_filename)
 remove_file(vrt_filename)
+
+# Fix for GDAL 3.12+ (gdalwarp): Map legacy/alternative abbreviations to 'near'
+if resize_resampling.lower() in ['nnb', 'nearest']:
+    resize_resampling = 'near'
+elif resize_resampling.lower() == 'avg':
+    resize_resampling = 'average'
 
 # Check if this is an MRF insert update, if not then regenerate a new MRF
 mrf_list = []
@@ -3333,6 +3394,14 @@ if target_x != "":
     gdalbuildvrt_command_list.append("-tr")
     gdalbuildvrt_command_list.append(xres)
     gdalbuildvrt_command_list.append(yres)
+    if resize_resampling != "":
+        buildvrt_resampling = resize_resampling
+        # gdalbuildvrt specifically expects "nearest" instead of "near"
+        if buildvrt_resampling.lower() == "near":
+            buildvrt_resampling = "nearest"
+            
+        gdalbuildvrt_command_list.append("-r")
+        gdalbuildvrt_command_list.append(buildvrt_resampling)
 
 if vrtnodata != "":
     # set the nodata values if provided
@@ -3361,11 +3430,13 @@ subprocess.call(gdalbuildvrt_command_list, stderr=gdalbuildvrt_stderr_file)
 # use gdalwarp if resize with resampling method is declared
 if resize_resampling != "":
     if target_y == "":
-        target_y = str(int(target_x) / 2)
+        target_y = str(int(target_x) // 2)
     gdal_warp_command_list = [
         "gdalwarp",
         "-of",
         "VRT",
+        "-ovr",
+        "NONE",
         "-r",
         resize_resampling,
         "-ts",

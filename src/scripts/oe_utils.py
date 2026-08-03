@@ -424,7 +424,7 @@ def run_command(cmd, sigevent_url):
             log_sig_err(error.strip(), sigevent_url)
             raise Exception(error.strip())
     if returncode != 0:
-        log_sig_err("{0} return code {1}".format(cmd, returncode))
+        log_sig_err("{0} return code {1}".format(cmd, returncode), sigevent_url)
 
 
 def run_gdalinfo(image, sigevent_url, timeout=90, json_fmt=True):
