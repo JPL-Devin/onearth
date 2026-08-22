@@ -347,7 +347,7 @@ class TestPeriods(unittest.TestCase):
         self.assertTrue(new_period.endswith('/PT12H'))
     
     def test_default_to_last(self):
-        # Add different dates but make sure lastest is set as default key
+        # Add different dates but make sure latest is set as default key
         layer_key = "test_layer_default"
         datetimes = [
             '2023-09-07T00:41:00',
