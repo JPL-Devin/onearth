@@ -356,37 +356,46 @@ class TestPeriods(unittest.TestCase):
 
         # Test Subdaily
         # Add oldest date
-        self.redis_client.zadd(layer_key + ":dates", {datetimes[-1]: 0})
+        self.redis_client.zadd(layer_key + ":dates", {datetimes[0]: 0})
 
         # Run calculate without start, end, and keep_existing_periods
-        calculate_layer_periods(self.redis_client, layer_key, new_datetime=datetimes[1],debug=True)
+        calculate_layer_periods(self.redis_client, layer_key, new_datetime=datetimes[-1],debug=True)
+        
+        # Simulate varable time best key updates:
+        # Add new datetime that isn't as late as the latest datetime,
+        # simulating what might be copied to this layer's date's key as best key is updated
+        self.redis_client.zadd(layer_key + ":dates", {datetimes[1]: 0})
         # Run calculate with start, end, and keep_existing_periods, and without new_datetime
-        # Simulate varable time best key updates
         calculate_layer_periods(self.redis_client, layer_key, new_datetime=None, 
                                 start_date=datetimes[0], end_date='2023-09-07T01:32:00',
-                                keep_existing_periods=True,debug=True)
+                                keep_existing_periods=True, debug=True)
 
         layer_dates = self.redis_client.zrange(layer_key + ":dates", 0, -1)
         layer_default = self.redis_client.get(layer_key + ":default")
-        self.assertEqual(len(layer_dates), 3,
-                         f'Returned dates length of {len(layer_dates)} does not match expected length of 3')
+        self.assertEqual(len(layer_dates), len(datetimes),
+                         f'Returned dates length of {len(layer_dates)} does not match expected length of {len(datetimes)}')
         self.assertTrue(layer_dates[-1].decode('utf-8') == datetimes[-1],
                         f'Returned last date {layer_dates[-1].decode("utf-8")} does not match expected last date {datetimes[-1]}Z')
         self.assertTrue(layer_default.decode('utf-8') == f'{datetimes[-1]}Z',
                         f'Returned default date {layer_default.decode("utf-8")} does not match expected default date {datetimes[-1]}Z')
 
         #Test Daily
-        date = '2026-12-01'
+        date1 = '2026-12-01'
+        date2 = '2026-12-25'
         self.redis_client.sadd(layer_key + ":config", 'DETECT/DETECT/P1D')
-        calculate_layer_periods(self.redis_client, layer_key, f'{date}T00:00:00')
+        # add later date first
+        calculate_layer_periods(self.redis_client, layer_key, f'{date2}T00:00:00')
+        # then add earlier date
+        calculate_layer_periods(self.redis_client, layer_key, f'{date1}T00:00:00')
         layer_dates = self.redis_client.zrange(layer_key + ":dates", 0, -1)
         layer_default = self.redis_client.get(layer_key + ":default")
-        self.assertEqual(len(layer_dates), 4,
-                         f'Returned dates length of {len(layer_dates)} does not match expected length of 4')
-        self.assertTrue(layer_dates[-1].decode('utf-8') == f'{date}T00:00:00',
-                        f'Returned last date {layer_dates[-1].decode("utf-8")} does not match expected last date {date}T00:00:00')
-        self.assertTrue(layer_default.decode('utf-8') == date, 
-                        f'Returned default date {layer_default.decode("utf-8")} does not match expected default date {date}')
+        self.assertEqual(len(layer_dates), 5,
+                         f'Returned dates length of {len(layer_dates)} does not match expected length of 5')
+        self.assertTrue(layer_dates[-1].decode('utf-8') == f'{date2}T00:00:00',
+                        f'Returned last date {layer_dates[-1].decode("utf-8")} does not match expected last date {date2}T00:00:00')
+        # verify that the later date is still the default despite the ealier date being added more recently
+        self.assertTrue(layer_default.decode('utf-8') == date2, 
+                        f'Returned default date {layer_default.decode("utf-8")} does not match expected default date {date2}')
 
     @classmethod
     def tearDownClass(self):
