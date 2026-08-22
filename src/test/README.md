@@ -172,6 +172,7 @@ Each test script will output a JUnit XML results file. By default, these files a
 53. Test converting `periods` keys from an unsorted `set` to a sorted `zset`
 54. Test converting `periods` keys from a sorted `zset` to an unsorted `set`
 55. Test converting a single layer's `periods` key from a sorted `zset` to an unsorted `set` using oe_periods_key_converter.py's layer filter option
+56. Test that default dates are determined based on the latest date available instead of most recent date added.
 
 ## Periods.py Unit Tests
 1. Test `get_zadd_dict`
