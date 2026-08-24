@@ -27,7 +27,7 @@ RUN dnf -y update && \
         mod_ssl-1:2.4.63-13.el10_2.1 \
         openssl-devel-1:3.5.5 \
         luarocks-3.9.2 \
-        valkey-compat-redis-8.0.7 \
+        valkey-compat-redis-8.0.9 \
         cronie-1.7.0 \
         logrotate-3.22.0 \
         python3-devel-3.12.13 \
@@ -40,8 +40,8 @@ RUN echo 'will cite' | parallel --citation || true
 
 # Install supercronic
 WORKDIR /tmp
-RUN wget https://go.dev/dl/go1.26.5.linux-amd64.tar.gz && \
-    tar xf go1.26.5.linux-amd64.tar.gz && \
+RUN wget https://go.dev/dl/go1.26.6.linux-amd64.tar.gz && \
+    tar xf go1.26.6.linux-amd64.tar.gz && \
     mv go /usr/local/ && \
     ln -s /usr/local/go/bin/go /usr/local/bin/go && \
     wget https://github.com/aptible/supercronic/archive/refs/tags/v0.2.46.tar.gz && \
