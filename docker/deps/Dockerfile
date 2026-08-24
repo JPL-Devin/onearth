@@ -69,7 +69,7 @@ RUN cd client_golang@v1.23.2 && \
 
 # Install brunsli dependency
 WORKDIR /tmp
-RUN git clone --depth=1 https://github.com/google/brunsli.git && \
+RUN git clone --depth=1 --branch 66de4d6386f2cd1b44d8509ac12b586299a6cdb8 https://github.com/google/brunsli.git && \
     cd brunsli && \
     git submodule update --init --recursive && \
     cmake -DCMAKE_PREFIX_PATH=/usr/local/ -DCMAKE_INSTALL_PREFIX=/usr/local/ -DCMAKE_INSTALL_LIBDIR=lib -DCMAKE_BUILD_TYPE=Release -B out && \
