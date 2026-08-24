@@ -408,7 +408,7 @@ def calculate_layer_periods(redis_cli, layer_key, new_datetime=None, expiration=
 
     if default_date:
         if has_time:
-            default_date = f'{default_date}Z'
+            default_date = f'{default_date}'
         else:
             default_date = re.sub(r'T00:00:00Z?', '', default_date)
 

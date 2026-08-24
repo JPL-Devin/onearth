@@ -394,8 +394,8 @@ class TestPeriods(unittest.TestCase):
         self.assertTrue(layer_dates[-1].decode('utf-8') == f'{date2}T00:00:00',
                         f'Returned last date {layer_dates[-1].decode("utf-8")} does not match expected last date {date2}T00:00:00')
         # verify that the later date is still the default despite the ealier date being added more recently
-        self.assertTrue(layer_default.decode('utf-8') == date2, 
-                        f'Returned default date {layer_default.decode("utf-8")} does not match expected default date {date2}')
+        self.assertTrue(layer_default.decode('utf-8') == f'{date2}T00:00:00', 
+                        f'Returned default date {layer_default.decode("utf-8")} does not match expected default date {date2}T00:00:00')
 
     @classmethod
     def tearDownClass(self):
