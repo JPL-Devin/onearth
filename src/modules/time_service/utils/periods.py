@@ -388,26 +388,24 @@ def calculate_layer_periods(redis_cli, layer_key, new_datetime=None, expiration=
                 redis_cli.zrem(f'{key}:periods', *periods_to_remove)
 
     # Update :default key
-    default_date = None
+    # Find forced end date from config (if any)
     last_config = None
-    has_time = True
-    # Check if end datetime is set in config
     for config in reversed(configs):
         parts = config.split('/')
-        if len(parts) > 2:
-            if 'PT' not in parts[-1]:
-                has_time = False
-            if 'DETECT' not in parts[-2]:
-                last_config = parts[-2]
-                break
-    if last_config:
-        if re.search(r'\d{4}-\d{2}-\d{2}', last_config):
-            default_date = last_config
-    # Else use last date
+        if len(parts) > 2 and 'DETECT' not in parts[-2]:
+            last_config = parts[-2]
+            break
+
+    # Determine if layer has time components from calculated periods.
+    # This will determine whether to strip the time component from the default date.
+    has_time = any('T' in p for p in calculated_periods)
+
+    if last_config and re.search(r'\d{4}-\d{2}-\d{2}', last_config):
+        default_date = last_config
     else:
         last_date = redis_cli.zrange(f'{key}:dates', -1, -1)
-        if last_date and len(last_date) > 0:
-            default_date = last_date[0].decode("utf-8")
+        default_date = last_date[0].decode("utf-8") if last_date else None
+
     if default_date:
         if has_time:
             default_date = f'{default_date}Z'
