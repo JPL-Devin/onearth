@@ -93,6 +93,7 @@ RUN git clone --depth 1 --branch v${MRF_VERSION} https://github.com/nasa-gibs/mr
 WORKDIR /tmp
 RUN git clone --depth=1 https://github.com/google/brunsli.git && \
     cd brunsli && \
+    git fetch --depth=1 origin 66de4d6386f2cd1b44d8509ac12b586299a6cdb8 && \
     git checkout 66de4d6386f2cd1b44d8509ac12b586299a6cdb8 && \
     git submodule update --init --recursive && \
     cmake -DCMAKE_PREFIX_PATH=/usr/local/ -DCMAKE_INSTALL_PREFIX=/usr/local/ -DCMAKE_INSTALL_LIBDIR=lib -DCMAKE_BUILD_TYPE=Release -B out && \
