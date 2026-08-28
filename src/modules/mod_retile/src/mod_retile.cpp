@@ -699,20 +699,20 @@ static int handler(request_rec *r)
       ap_log_rerror(APLOG_MARK, APLOG_INFO, 0, r, "BOUNDS_CHECK: input_l >= n_levels (%zu >= %zu)", input_l, cfg->inraster.n_levels);
       return sendEmptyTile(r, cfg->raster.missing);
     }
-    if (info.tl.x >= cfg->inraster.rsets[input_l].w) {
-      ap_log_rerror(APLOG_MARK, APLOG_INFO, 0, r, "BOUNDS_CHECK: tl.x >= w (%d >= %d)", info.tl.x, cfg->inraster.rsets[input_l].w);
+    if (info.tl.x > cfg->inraster.rsets[input_l].w) {
+      ap_log_rerror(APLOG_MARK, APLOG_INFO, 0, r, "BOUNDS_CHECK: tl.x > w (%d > %d)", info.tl.x, cfg->inraster.rsets[input_l].w);
       return sendEmptyTile(r, cfg->raster.missing);
     }
-    if (info.tl.y >= cfg->inraster.rsets[input_l].h) {
-      ap_log_rerror(APLOG_MARK, APLOG_INFO, 0, r, "BOUNDS_CHECK: tl.y >= h (%d >= %d)", info.tl.y, cfg->inraster.rsets[input_l].h);
+    if (info.tl.y > cfg->inraster.rsets[input_l].h) {
+      ap_log_rerror(APLOG_MARK, APLOG_INFO, 0, r, "BOUNDS_CHECK: tl.y > h (%d > %d)", info.tl.y, cfg->inraster.rsets[input_l].h);
       return sendEmptyTile(r, cfg->raster.missing);
     }
-    if (info.br.x >= cfg->inraster.rsets[input_l].w) {
-      ap_log_rerror(APLOG_MARK, APLOG_INFO, 0, r, "BOUNDS_CHECK: br.x >= w (%d >= %d)", info.br.x, cfg->inraster.rsets[input_l].w);
+    if (info.br.x > cfg->inraster.rsets[input_l].w) {
+      ap_log_rerror(APLOG_MARK, APLOG_INFO, 0, r, "BOUNDS_CHECK: br.x > w (%d > %d)", info.br.x, cfg->inraster.rsets[input_l].w);
       return sendEmptyTile(r, cfg->raster.missing);
     }
-    if (info.br.y >= cfg->inraster.rsets[input_l].h) {
-      ap_log_rerror(APLOG_MARK, APLOG_INFO, 0, r, "BOUNDS_CHECK: br.y >= h (%d >= %d)", info.br.y, cfg->inraster.rsets[input_l].h);
+    if (info.br.y > cfg->inraster.rsets[input_l].h) {
+      ap_log_rerror(APLOG_MARK, APLOG_INFO, 0, r, "BOUNDS_CHECK: br.y > h (%d > %d)", info.br.y, cfg->inraster.rsets[input_l].h);
       return sendEmptyTile(r, cfg->raster.missing);
     }
 
