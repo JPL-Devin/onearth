@@ -678,6 +678,18 @@ static int handler(request_rec *r)
     size_t input_l = pick_input_level(info, out_equiv_rx, out_equiv_ry);
     bbox_to_tile(cfg->inraster, input_l, oebb, info.tl, info.br);
 
+    // If the reprojection needs tiles outside the source grid, return empty tile
+    if (info.tl.x < 0 || info.tl.y < 0 ||
+      info.br.x < 0 || info.br.y < 0 ||
+      input_l >= cfg->inraster.n_levels ||
+      info.tl.x >= cfg->inraster.rsets[input_l].w ||
+      info.tl.y >= cfg->inraster.rsets[input_l].h ||
+      info.br.x >= cfg->inraster.rsets[input_l].w ||
+      info.br.y >= cfg->inraster.rsets[input_l].h) {
+      // Valid output tile, but source tiles don't exist due to grid mismatch
+      return sendEmptyTile(r, cfg->raster.missing);
+    }
+
     info.tl.z = info.br.z = info.out_tile.z;
     info.tl.c = info.br.c = cfg->inraster.pagesize.c;
     info.tl.l = info.br.l = input_l;
