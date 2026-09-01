@@ -3,7 +3,7 @@
 # This version of the Dockerfile packs commands together to minimize layers and
 # to minimize image size.
 
-FROM almalinux:10.0
+FROM almalinux:10.2
 
 # Install dependencies
 RUN dnf -y update && \
