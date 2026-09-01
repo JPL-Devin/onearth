@@ -401,7 +401,10 @@ static apr_status_t retrieve_source(request_rec* r, work& info, void** buffer, i
             int empty_flag = 0;
             if (nullptr != ETagIn) {
                 etag = base32decode(ETagIn, &empty_flag);
-                if (empty_flag) continue; // Ignore empty input tiles
+                if (empty_flag) {
+                    count++;
+                    continue; // Ignore empty input tiles
+                }
             }
             else { // Input came without an ETag, make one up
                 etag = rctx.size; // Start with the input tile size
@@ -677,17 +680,6 @@ static int handler(request_rec *r)
     // Pick the input level
     size_t input_l = pick_input_level(info, out_equiv_rx, out_equiv_ry);
     bbox_to_tile(cfg->inraster, input_l, oebb, info.tl, info.br);
-
-    // If the reprojection needs tiles outside the source grid, return empty tile
-    if (info.tl.x < 0 || info.tl.y < 0 ||
-      info.br.x < 0 || info.br.y < 0 ||
-      input_l >= cfg->inraster.n_levels ||
-      info.tl.x > cfg->inraster.rsets[input_l].w ||
-      info.tl.y > cfg->inraster.rsets[input_l].h ||
-      info.br.x > cfg->inraster.rsets[input_l].w ||
-      info.br.y > cfg->inraster.rsets[input_l].h) {
-      return sendEmptyTile(r, cfg->raster.missing);
-    }
 
     info.tl.z = info.br.z = info.out_tile.z;
     info.tl.c = info.br.c = cfg->inraster.pagesize.c;
