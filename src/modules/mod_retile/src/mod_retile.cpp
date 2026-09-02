@@ -401,7 +401,10 @@ static apr_status_t retrieve_source(request_rec* r, work& info, void** buffer, i
             int empty_flag = 0;
             if (nullptr != ETagIn) {
                 etag = base32decode(ETagIn, &empty_flag);
-                if (empty_flag) continue; // Ignore empty input tiles
+                if (empty_flag) {
+                    count++;
+                    continue; // Ignore empty input tiles
+                }
             }
             else { // Input came without an ETag, make one up
                 etag = rctx.size; // Start with the input tile size
