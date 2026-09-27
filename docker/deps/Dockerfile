@@ -5,6 +5,9 @@
 
 FROM almalinux:10.2
 
+# Set by BuildKit to the target platform's architecture (amd64, arm64)
+ARG TARGETARCH
+
 # Install dependencies
 RUN dnf -y update && \
     dnf groupinstall -y "Development Tools" && \
@@ -40,19 +43,18 @@ RUN echo 'will cite' | parallel --citation || true
 
 # Install supercronic
 WORKDIR /tmp
-RUN wget https://go.dev/dl/go1.26.6.linux-amd64.tar.gz && \
-    tar xf go1.26.6.linux-amd64.tar.gz && \
+RUN GOARCH=${TARGETARCH:-$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')} && \
+    wget https://go.dev/dl/go1.26.6.linux-${GOARCH}.tar.gz && \
+    tar xf go1.26.6.linux-${GOARCH}.tar.gz && \
     mv go /usr/local/ && \
     ln -s /usr/local/go/bin/go /usr/local/bin/go && \
     wget https://github.com/aptible/supercronic/archive/refs/tags/v0.2.46.tar.gz && \
     tar xf v0.2.46.tar.gz && \
     cd supercronic-0.2.46 && \
-    sed -i 's/386 arm arm64//g' build.sh && \
     go mod tidy && \
     go mod vendor && \
-    sh build.sh && \
-    mv dist/supercronic-linux-amd64 /usr/local/bin/ && \
-    ln -s /usr/local/bin/supercronic-linux-amd64 /usr/local/bin/supercronic
+    GOOS=linux GOARCH=${GOARCH} CGO_ENABLED=0 go build -ldflags="-X 'main.Version=v0.2.46'" -o /usr/local/bin/supercronic-linux-${GOARCH} && \
+    ln -s /usr/local/bin/supercronic-linux-${GOARCH} /usr/local/bin/supercronic
 
 # Install yq
 WORKDIR /tmp
@@ -87,7 +89,7 @@ RUN git clone --depth=1 https://github.com/google/brunsli.git && \
 WORKDIR /tmp
 RUN dnf install -y yum-utils-4.7.0 rpm-build-4.19.1.1 && \
     dnf clean all && \
-    yumdownloader --source httpd-2.4.63-13.el10_2.4.x86_64 && \
+    yumdownloader --source httpd-2.4.63-13.el10_2.4 && \
     HOME="/tmp" rpm -ivh httpd-*.src.rpm && \
     yum-builddep -y /tmp/rpmbuild/SPECS/httpd.spec
 
@@ -131,8 +133,8 @@ RUN sed -i 's:--with-apr=%{_prefix}:--with-apr=/usr/local/apr/bin/apr-1-config:g
     yum -y install system-logos-httpd /etc/mime.types sscg && \
     yum clean all && \
     rpm -ivh /tmp/rpmbuild/RPMS/*/httpd*.rpm && \
-    rpm -ivh /tmp/rpmbuild/RPMS/x86_64/mod_ssl*.rpm && \
-    rpm -ivh /tmp/rpmbuild/RPMS/x86_64/mod_lua*.rpm && \
+    rpm -ivh /tmp/rpmbuild/RPMS/*/mod_ssl*.rpm && \
+    rpm -ivh /tmp/rpmbuild/RPMS/*/mod_lua*.rpm && \
     sed -i 's/\\"%{User-Agent}i\\"" combined/\\"%{User-Agent}i\\" \\"%{X-Forwarded-For}i\\"" combined/' /etc/httpd/conf/httpd.conf && \
     sed -i 's/\\"%{User-Agent}i\\" %I %O" combinedio/\\"%{User-Agent}i\\" \\"%{X-Forwarded-For}i\\" %I %O" combinedio/' /etc/httpd/conf/httpd.conf && \
     grep -q 'X-Forwarded-For' /etc/httpd/conf/httpd.conf || { echo "ERROR: LogFormat modification failed"; exit 1; } && \
