@@ -63,6 +63,14 @@ WORKDIR /tmp/mod_fcgid-2.3.9
 RUN APXS=/usr/bin/apxs ./configure.apxs
 RUN make && make install
 
+# Install GDAL (before the pip requirements: Fiona has no aarch64 wheel and builds against it)
+ENV LD_LIBRARY_PATH=:/usr/local/lib
+WORKDIR /tmp
+RUN ARCH=$(uname -m) && \
+    wget -P /tmp/ https://github.com/nasa-gibs/gibs-gdal/releases/download/v${GDAL_VERSION}-${GIBS_GDAL_RELEASE}/gibs-gdal-${GDAL_VERSION}-${GIBS_GDAL_RELEASE}.el${ALMALINUX_VERSION}.${ARCH}.rpm && \
+    rpm -i /tmp/gibs-gdal-${GDAL_VERSION}-${GIBS_GDAL_RELEASE}.el${ALMALINUX_VERSION}.${ARCH}.rpm && \
+    rm -rf /tmp/*
+
 # Copy OnEarth to home directory
 RUN mkdir -p /home/oe2/onearth
 WORKDIR /home/oe2/onearth
@@ -85,14 +93,6 @@ RUN cd /tmp/spatialindex-src-1.8.5 && \
     make && make install && \
     ldconfig && \
     cd ..
-
-# Install GDAL
-ENV LD_LIBRARY_PATH=:/usr/local/lib
-WORKDIR /tmp
-RUN ARCH=$(uname -m) && \
-    wget -P /tmp/ https://github.com/nasa-gibs/gibs-gdal/releases/download/v${GDAL_VERSION}-${GIBS_GDAL_RELEASE}/gibs-gdal-${GDAL_VERSION}-${GIBS_GDAL_RELEASE}.el${ALMALINUX_VERSION}.${ARCH}.rpm && \
-    rpm -i /tmp/gibs-gdal-${GDAL_VERSION}-${GIBS_GDAL_RELEASE}.el${ALMALINUX_VERSION}.${ARCH}.rpm && \
-    rm -rf /tmp/*
 
 # Fix outdated packaging installed in this environment. It does not support the "strip_trailing_zero" argument in
 # canonicalize_version, which was causing GDAL build error
