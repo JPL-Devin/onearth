@@ -26,7 +26,7 @@ RUN dnf -y update && \
         pcre2-devel-10.44 \
         wget-1.24.5 \
         libyaml-devel-0.2.5 \
-        libcurl-devel-8.12.1 \
+        libcurl-devel-8.12.1-4.el10_2.4 \
         libjpeg-turbo-devel-3.0.2 \
         libxml2-devel-2.12.5 \
         luarocks-3.9.2 \
@@ -41,7 +41,7 @@ RUN dnf -y update && \
         proj-devel-9.6.0 \
         geos-3.13.1 \
         geos-devel-3.13.1 \
-        python3-devel-3.12.13 \
+        python3-devel-3.12.14 \
         protobuf-c-devel-1.5.0 && \
 	dnf clean all
 
@@ -71,7 +71,7 @@ ENV LD_LIBRARY_PATH=:/usr/local/lib
 WORKDIR /tmp
 RUN ARCH=$(uname -m) && \
     wget -P /tmp/ https://github.com/nasa-gibs/gibs-gdal/releases/download/v${GDAL_VERSION}-${GIBS_GDAL_RELEASE}/gibs-gdal-${GDAL_VERSION}-${GIBS_GDAL_RELEASE}.el${ALMALINUX_VERSION}.${ARCH}.rpm && \
-    rpm -i /tmp/gibs-gdal-${GDAL_VERSION}-${GIBS_GDAL_RELEASE}.el${ALMALINUX_VERSION}.${ARCH}.rpm && \
+    rpm -i gibs-gdal-${GDAL_VERSION}-${GIBS_GDAL_RELEASE}.el${ALMALINUX_VERSION}.${ARCH}.rpm && \
     rm -rf /tmp/*
 
 # Fix python gdal install
@@ -173,3 +173,14 @@ RUN rm -rf /tmp/*
 
 ARG ONEARTH_VERSION
 ENV ONEARTH_VERSION=$ONEARTH_VERSION
+
+# Add non-root user
+RUN groupadd www-data && useradd -g www-data www-data
+RUN chmod 1777 /tmp && \
+    chown -hR www-data:www-data /home/oe2 && \
+    chown -hR www-data:www-data /var/log
+
+# Change user
+USER www-data
+
+WORKDIR /home/oe2/onearth
