@@ -26,7 +26,7 @@ RUN dnf -y update && \
         pcre2-devel-10.44 \
         wget-1.24.5 \
         libyaml-devel-0.2.5 \
-        libcurl-devel-8.12.1-4.el10_2.4 \
+        libcurl-devel-8.12.1 \
         libjpeg-turbo-devel-3.0.2 \
         libxml2-devel-2.12.5 \
         luarocks-3.9.2 \
