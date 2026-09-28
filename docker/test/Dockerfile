@@ -34,9 +34,10 @@ RUN dnf install -y \
 
 # FastCGI
 RUN cd /tmp && \
-    wget https://dl.fedoraproject.org/pub/epel/10/Everything/x86_64/Packages/f/fcgi-2.4.7-1.el10_2.x86_64.rpm && \
-    wget https://dl.fedoraproject.org/pub/epel/10/Everything/x86_64/Packages/f/fcgi-devel-2.4.7-1.el10_2.x86_64.rpm && \
-    dnf install -y ./fcgi-2.4.7-1.el10_2.x86_64.rpm ./fcgi-devel-2.4.7-1.el10_2.x86_64.rpm && \
+    ARCH=$(uname -m) && \
+    wget https://dl.fedoraproject.org/pub/epel/10/Everything/${ARCH}/Packages/f/fcgi-2.4.7-1.el10_2.${ARCH}.rpm && \
+    wget https://dl.fedoraproject.org/pub/epel/10/Everything/${ARCH}/Packages/f/fcgi-devel-2.4.7-1.el10_2.${ARCH}.rpm && \
+    dnf install -y ./fcgi-2.4.7-1.el10_2.${ARCH}.rpm ./fcgi-devel-2.4.7-1.el10_2.${ARCH}.rpm && \
     dnf clean all
 
 # Some environments don't like git:// links, so we need to workaround that with certain lua dependencies
@@ -62,6 +63,14 @@ WORKDIR /tmp/mod_fcgid-2.3.9
 RUN APXS=/usr/bin/apxs ./configure.apxs
 RUN make && make install
 
+# Install GDAL (before the pip requirements: Fiona has no aarch64 wheel and builds against it)
+ENV LD_LIBRARY_PATH=:/usr/local/lib
+WORKDIR /tmp
+RUN ARCH=$(uname -m) && \
+    wget -P /tmp/ https://github.com/nasa-gibs/gibs-gdal/releases/download/v${GDAL_VERSION}-${GIBS_GDAL_RELEASE}/gibs-gdal-${GDAL_VERSION}-${GIBS_GDAL_RELEASE}.el${ALMALINUX_VERSION}.${ARCH}.rpm && \
+    rpm -i /tmp/gibs-gdal-${GDAL_VERSION}-${GIBS_GDAL_RELEASE}.el${ALMALINUX_VERSION}.${ARCH}.rpm && \
+    rm -rf /tmp/*
+
 # Copy OnEarth to home directory
 RUN mkdir -p /home/oe2/onearth
 WORKDIR /home/oe2/onearth
@@ -84,14 +93,6 @@ RUN cd /tmp/spatialindex-src-1.8.5 && \
     make && make install && \
     ldconfig && \
     cd ..
-
-# Install GDAL
-ENV LD_LIBRARY_PATH=:/usr/local/lib
-WORKDIR /tmp
-RUN ARCH=$(uname -m) && \
-    wget -P /tmp/ https://github.com/nasa-gibs/gibs-gdal/releases/download/v${GDAL_VERSION}-${GIBS_GDAL_RELEASE}/gibs-gdal-${GDAL_VERSION}-${GIBS_GDAL_RELEASE}.el${ALMALINUX_VERSION}.${ARCH}.rpm && \
-    rpm -i /tmp/gibs-gdal-${GDAL_VERSION}-${GIBS_GDAL_RELEASE}.el${ALMALINUX_VERSION}.${ARCH}.rpm && \
-    rm -rf /tmp/*
 
 # Fix outdated packaging installed in this environment. It does not support the "strip_trailing_zero" argument in
 # canonicalize_version, which was causing GDAL build error
@@ -198,7 +199,7 @@ RUN install -m 755 src/empty_tile/oe_generate_empty_tile.py -D /usr/bin/oe_gener
     install -m 755 src/mrfgen/RgbPngToPalPng.py -D /usr/bin/RgbPngToPalPng.py && \
     install -m 755 src/mrfgen/RgbToPalLib.pyx -D /usr/bin/RgbToPalLib.pyx && \
     install -m 755 src/mrfgen/setup.py -D /usr/bin/setup.py && \
-    install -m 755 src/mrfgen/RgbToPalLib.cpython-312-x86_64-linux-gnu.so -D /usr/bin/RgbToPalLib.cpython-312-x86_64-linux-gnu.so && \
+    install -m 755 -t /usr/bin src/mrfgen/RgbToPalLib.cpython-*.so && \
     install -m 755 src/mrfgen/colormap2vrt.py -D /usr/bin/colormap2vrt.py && \
     install -m 755 src/mrfgen/overtiffpacker.py -D /usr/bin/overtiffpacker.py && \
     install -m 755 src/mrfgen/RGBApng2Palpng -D /usr/bin/RGBApng2Palpng && \

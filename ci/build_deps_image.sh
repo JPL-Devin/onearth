@@ -10,13 +10,9 @@ if [ -z "$TAG" ]; then
   exit 1
 fi
 
-# Detect CPU architecture
-ARCH=$(uname -m)
-DOCKER_PLATFORM_OPTION=""
-
-if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
-    DOCKER_PLATFORM_OPTION="--platform=linux/amd64"
-fi
+# Images are built for the host architecture (amd64 and arm64 are supported).
+# Set DOCKER_PLATFORM (e.g. linux/amd64 or linux/arm64) to target a different platform.
+DOCKER_PLATFORM_OPTION=${DOCKER_PLATFORM:+--platform=$DOCKER_PLATFORM}
 
 rm -rf Dockerfile
 

@@ -28,6 +28,21 @@ container to access the image server.
 
 By default, the containers use a Docker network `oe2` to communicate with each other.
 
+### CPU Architectures
+
+The Dockerfiles support both `linux/amd64` (x86-64) and `linux/arm64` (aarch64, e.g. AWS Graviton or Apple Silicon).
+Images are built for the host architecture by default. To target a different platform (for example, to build
+`amd64` images on an Apple Silicon machine), set `DOCKER_PLATFORM` before running the build scripts or
+sourcing `set_env_vars_docker_compose.sh`:
+
+```bash
+DOCKER_PLATFORM=linux/amd64 ./ci/build_deps_image.sh nasagibs/onearth-deps:$ONEARTH_VERSION
+DOCKER_PLATFORM=linux/amd64 ./build.sh
+```
+
+Cross-platform builds require QEMU emulation (`docker run --privileged --rm tonistiigi/binfmt --install all`)
+and are considerably slower than native builds.
+
 ## Configuration Options
 
 OnEarth Docker containers accept the following environment variables. Use the `--env`, `-e` or `--env-file` options when starting the container with Docker. Amazon ECS also supports environment variables.

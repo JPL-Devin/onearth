@@ -41,15 +41,16 @@ RUN dnf -y update && \
         proj-devel-9.6.0 \
         geos-3.13.1 \
         geos-devel-3.13.1 \
-        python3-devel-3.12.12 \
+        python3-devel-3.12.13 \
         protobuf-c-devel-1.5.0 && \
 	dnf clean all
 
 # FastCGI
 RUN cd /tmp && \
-    wget https://dl.fedoraproject.org/pub/epel/10/Everything/x86_64/Packages/f/fcgi-2.4.7-1.el10_2.x86_64.rpm && \
-    wget https://dl.fedoraproject.org/pub/epel/10/Everything/x86_64/Packages/f/fcgi-devel-2.4.7-1.el10_2.x86_64.rpm && \
-    dnf install -y ./fcgi-2.4.7-1.el10_2.x86_64.rpm ./fcgi-devel-2.4.7-1.el10_2.x86_64.rpm && \
+    ARCH=$(uname -m) && \
+    wget https://dl.fedoraproject.org/pub/epel/10/Everything/${ARCH}/Packages/f/fcgi-2.4.7-1.el10_2.${ARCH}.rpm && \
+    wget https://dl.fedoraproject.org/pub/epel/10/Everything/${ARCH}/Packages/f/fcgi-devel-2.4.7-1.el10_2.${ARCH}.rpm && \
+    dnf install -y ./fcgi-2.4.7-1.el10_2.${ARCH}.rpm ./fcgi-devel-2.4.7-1.el10_2.${ARCH}.rpm && \
 	dnf clean all
 
 # libspatialindex
@@ -69,8 +70,8 @@ RUN pip install --force-reinstall numpy==1.26.4
 ENV LD_LIBRARY_PATH=:/usr/local/lib
 WORKDIR /tmp
 RUN ARCH=$(uname -m) && \
-RUN wget -P /tmp/ https://github.com/nasa-gibs/gibs-gdal/releases/download/v${GDAL_VERSION}-${GIBS_GDAL_RELEASE}/gibs-gdal-${GDAL_VERSION}-${GIBS_GDAL_RELEASE}.el${ALMALINUX_VERSION}.${ARCH}.rpm && \
-    rpm -i gibs-gdal-${GDAL_VERSION}-${GIBS_GDAL_RELEASE}.el${ALMALINUX_VERSION}.${ARCH}.rpm && \
+    wget -P /tmp/ https://github.com/nasa-gibs/gibs-gdal/releases/download/v${GDAL_VERSION}-${GIBS_GDAL_RELEASE}/gibs-gdal-${GDAL_VERSION}-${GIBS_GDAL_RELEASE}.el${ALMALINUX_VERSION}.${ARCH}.rpm && \
+    rpm -i /tmp/gibs-gdal-${GDAL_VERSION}-${GIBS_GDAL_RELEASE}.el${ALMALINUX_VERSION}.${ARCH}.rpm && \
     rm -rf /tmp/*
 
 # Fix python gdal install
@@ -138,7 +139,7 @@ RUN install -m 755 src/empty_tile/oe_generate_empty_tile.py -D /usr/bin/oe_gener
     install -m 755 src/mrfgen/RgbPngToPalPng.py -D /usr/bin/RgbPngToPalPng.py && \
     install -m 755 src/mrfgen/RgbToPalLib.pyx -D /usr/bin/RgbToPalLib.pyx && \
     install -m 755 src/mrfgen/setup.py -D /usr/bin/setup.py && \
-    install -m 755 src/mrfgen/RgbToPalLib.cpython-312-x86_64-linux-gnu.so -D /usr/bin/RgbToPalLib.cpython-312-x86_64-linux-gnu.so && \
+    install -m 755 -t /usr/bin src/mrfgen/RgbToPalLib.cpython-*.so && \
     install -m 755 src/mrfgen/colormap2vrt.py -D /usr/bin/colormap2vrt.py && \
     install -m 755 src/mrfgen/overtiffpacker.py -D /usr/bin/overtiffpacker.py && \
     install -m 755 src/mrfgen/RGBApng2Palpng -D /usr/bin/RGBApng2Palpng && \
