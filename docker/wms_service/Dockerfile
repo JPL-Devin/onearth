@@ -62,17 +62,18 @@ WORKDIR /home/oe2/onearth
 # Remove dependency that conflicts with older version in OnEarth requirements.txt
 RUN dnf remove -y python3-dateutil
 
-# Install pip dependencies
-RUN pip install pip==26.2
-RUN pip install -r requirements.txt
-
-# Install GDAL
+# Install GDAL (before the pip requirements: Fiona has no aarch64 wheel and builds against it)
 ENV LD_LIBRARY_PATH=:/usr/local/lib
 WORKDIR /tmp
 RUN ARCH=$(uname -m) && \
     wget -q -P /tmp/ https://github.com/nasa-gibs/gibs-gdal/releases/download/v${GDAL_VERSION}-${GIBS_GDAL_RELEASE}/gibs-gdal-${GDAL_VERSION}-${GIBS_GDAL_RELEASE}.el${ALMALINUX_VERSION}.${ARCH}.rpm && \
     rpm -i /tmp/gibs-gdal-${GDAL_VERSION}-${GIBS_GDAL_RELEASE}.el${ALMALINUX_VERSION}.${ARCH}.rpm && \
     rm -rf /tmp/*
+
+# Install pip dependencies
+WORKDIR /home/oe2/onearth
+RUN pip install pip==26.2
+RUN pip install -r requirements.txt
 
 # Fix outdated packaging installed in this environment. It does not support the "strip_trailing_zero" argument in
 # canonicalize_version, which was causing GDAL build error
@@ -83,6 +84,7 @@ RUN pip install --force-reinstall 'packaging>=25.0'
 RUN pip install numpy==1.26.4 gdal[numpy]==`gdal-config --version` --no-build-isolation --no-cache-dir --force-reinstall
 
 # Install mrf_apps
+WORKDIR /tmp
 RUN git clone --depth 1 --branch v${MRF_VERSION} https://github.com/nasa-gibs/mrf.git && \
     curl "https://raw.githubusercontent.com/OSGeo/gdal/v${GDAL_VERSION}/frmts/mrf/marfa.h" -o /usr/local/include/marfa.h && \
     cd mrf/mrf_apps/ && \
