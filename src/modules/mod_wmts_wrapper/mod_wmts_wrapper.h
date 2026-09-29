@@ -37,6 +37,7 @@ typedef struct {
     const char *role;
     int time;
     ap_regex_t *date_regexp;
+    ap_regex_t *filename_date_regexp;
     const char *mime_type;
     const char *time_lookup_uri;
     int year_dir;

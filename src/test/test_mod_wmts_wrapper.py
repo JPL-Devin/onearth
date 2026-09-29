@@ -241,6 +241,11 @@ MOD_REPROJECT_DEST_CONFIG_TEMPLATE = """Size {size_x} {size_y} 1 {bands}
 """
 
 
+GEDI_VERSION_LAYER = 'GEDI_ISS_L3_Elevation_Mean_Lowest_Mode_201904-202010_v2_STD'
+MODIS_VERSION_LAYER = 'MODIS_Terra_CorrectedReflectance_TrueColor_v6.1_STD'
+DATED_VERSION_LAYER = 'test_mrf_date_201904-202010_v2_STD'
+
+
 class TestModWmtsWrapper(unittest.TestCase):
     @classmethod
     def setUpClass(self):
@@ -273,6 +278,7 @@ class TestModWmtsWrapper(unittest.TestCase):
 
         self.setup_mrf_nodate()
         self.setup_mrf_date()
+        self.setup_mrf_version_layers()
         self.setup_date_service()
         self.setup_mrf_date_yeardir()
         self.setup_mrf_date_daydir()
@@ -498,6 +504,62 @@ class TestModWmtsWrapper(unittest.TestCase):
                             config_prefix + '-' + date + '.pjg'),
             os.path.join(self.mrf_endpoint_path_date,
                             best_filename + '-' + new_date + '.pjg'))
+
+    @classmethod
+    def setup_mrf_version_layer(self, layer_name, period, default, file_suffix):
+        size_x = 2560
+        size_y = 1280
+        tile_size = 512
+        tilematrixset = '16km'
+        src_prefix = 'test_mrf_date'
+        src_date = '2012001000000'
+
+        endpoint_path = os.path.join(self.endpoint_path, layer_name, 'default', tilematrixset)
+        apache_config = bulk_replace(
+            MOD_MRF_DATE_APACHE_TEMPLATE,
+            [('{config_file_path}', os.path.join(endpoint_path, layer_name + '.config')),
+             ('{alias}', self.endpoint_prefix_mrf),
+             ('{endpoint_path}', self.endpoint_path),
+             ('{layer_name}', layer_name),
+             ('{tilematrixset}', tilematrixset), ('{year_dir}', 'Off')])
+
+        apache_config_path = os.path.join(apache_conf_dir, layer_name + '.conf')
+        with open(apache_config_path, 'w+') as f:
+            f.write(apache_config)
+        self.mod_mrf_apache_config_paths_version.append(apache_config_path)
+
+        test_imagery_path = os.path.join(os.getcwd(), 'mod_wmts_wrapper_test_data')
+        make_dir_tree(endpoint_path, ignore_existing=True)
+        for ext in ['.idx', '.pjg']:
+            shutil.copy(
+                os.path.join(test_imagery_path, src_prefix + '-' + src_date + ext),
+                os.path.join(endpoint_path, layer_name + file_suffix + ext))
+
+        mod_mrf_config = bulk_replace(
+            MOD_MRF_CONFIG_TEMPLATE,
+            [('{size_x}', size_x), ('{size_y}', size_y),
+             ('{bands}', 3),
+             ('{tile_size_x}', tile_size), ('{tile_size_y}', tile_size),
+             ('{idx_path}', os.path.join(endpoint_path, '${filename}.idx')),
+             ('{data_config}', 'DataFile ' + os.path.join(endpoint_path, '${filename}.pjg')),
+             ('{skipped_levels}', '1')])
+        with open(os.path.join(endpoint_path, layer_name + '.config'), 'w+') as f:
+            f.write(mod_mrf_config)
+
+        redis_data = [(layer_name, default, period)]
+        seed_redis_data(redis_data)
+        self.redis_layers.append(redis_data)
+
+    @classmethod
+    def setup_mrf_version_layers(self):
+        # Layers whose identifiers carry version chips, used to check Layer-Identifier-Actual
+        self.mod_mrf_apache_config_paths_version = []
+        static_period = '1900-01-01/2899-12-31/P1000Y'
+        # Static layers: the time service returns the bare layer name as the filename
+        self.setup_mrf_version_layer(GEDI_VERSION_LAYER, static_period, '1900-01-01', '')
+        self.setup_mrf_version_layer(MODIS_VERSION_LAYER, static_period, '1900-01-01', '')
+        # Dated layer: the time service appends '-YYYYDDDhhmmss' to the layer name
+        self.setup_mrf_version_layer(DATED_VERSION_LAYER, '2012-01-01/2012-01-01/P1Y', '2012-01-01', '-2012001000000')
 
     @classmethod
     def setup_mrf_date_yeardir(self):
@@ -1862,6 +1924,31 @@ class TestModWmtsWrapper(unittest.TestCase):
 
         check_layer_headers(self, headers, 'test_mrf_date', 'test_mrf_date-BEST', '2013-01-01', '2013-01-01T00:00:00Z')
 
+    def test_mod_mrf_version_chip_static_tile_headers(self):
+        # Hyphen inside the version chip must not be treated as an appended date
+        tile_url = f'http://localhost/mod_wmts_wrapper_mrf/{GEDI_VERSION_LAYER}/default/default/16km/0/0/0.jpg'
+
+        response = get_url(tile_url)
+        headers = response.getheaders()
+
+        check_layer_headers(self, headers, GEDI_VERSION_LAYER, GEDI_VERSION_LAYER, 'default', '1900-01-01T00:00:00Z')
+
+    def test_mod_mrf_version_chip_dated_tile_headers(self):
+        tile_url = f'http://localhost/mod_wmts_wrapper_mrf/{DATED_VERSION_LAYER}/default/2012-01-01/16km/0/0/0.jpg'
+
+        response = get_url(tile_url)
+        headers = response.getheaders()
+
+        check_layer_headers(self, headers, DATED_VERSION_LAYER, DATED_VERSION_LAYER, '2012-01-01', '2012-01-01T00:00:00Z')
+
+    def test_mod_mrf_no_hyphen_static_tile_headers(self):
+        tile_url = f'http://localhost/mod_wmts_wrapper_mrf/{MODIS_VERSION_LAYER}/default/default/16km/0/0/0.jpg'
+
+        response = get_url(tile_url)
+        headers = response.getheaders()
+
+        check_layer_headers(self, headers, MODIS_VERSION_LAYER, MODIS_VERSION_LAYER, 'default', '1900-01-01T00:00:00Z')
+
     def test_mod_mrf_date_tile_yeardir(self):
         for test in [('2012-01-01', '3f84501587adfe3006dcbf59e67cd0a3'),
                      ('2015-01-01', '9b38d90baeeebbcadbc8560a29481a5e')]:
@@ -1966,6 +2053,8 @@ class TestModWmtsWrapper(unittest.TestCase):
         os.remove(self.mod_mrf_apache_config_path_date_yeardir)
         os.remove(self.mod_mrf_apache_config_path_date_daydir)
         os.remove(self.mod_mrf_apache_config_path_nodate)
+        for path in self.mod_mrf_apache_config_paths_version:
+            os.remove(path)
         os.remove(self.mod_reproj_apache_config_path_date)
         os.remove(self.mod_reproj_apache_config_path_nodate)
         os.remove(self.time_service_test_config_dest_path)
