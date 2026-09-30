@@ -37,7 +37,6 @@ typedef struct {
     const char *role;
     int time;
     ap_regex_t *date_regexp;
-    ap_regex_t *filename_date_regexp;
     const char *mime_type;
     const char *time_lookup_uri;
     int year_dir;
@@ -46,6 +45,7 @@ typedef struct {
     apr_array_header_t *date_service_keys;
     const char *base_path;
     const char *gc_uri;
+    ap_regex_t *filename_date_regexp;
 } wmts_wrapper_conf;
 
 // WMTS error handling
