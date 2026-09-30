@@ -45,6 +45,7 @@ typedef struct {
     apr_array_header_t *date_service_keys;
     const char *base_path;
     const char *gc_uri;
+    ap_regex_t *filename_date_regexp;
 } wmts_wrapper_conf;
 
 // WMTS error handling
