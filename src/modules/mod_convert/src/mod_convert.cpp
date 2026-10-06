@@ -199,7 +199,7 @@ static const char *find_and_replace_string(apr_pool_t *p, const char *search_str
     return source_str;
 }
 
-static const char *get_actual_layername_from_filename(apr_pool_t *p, wmts_wrapper_conf *cfg, const char *filename) {
+static const char *get_actual_layername_from_filename(apr_pool_t *p, ap_regex_t *filename_date_regexp, const char *filename) {
 
     int i, len = strlen(filename);
     char *actual_layer_name = (char *)apr_pcalloc(p, MAX_STRING_LEN);
@@ -211,8 +211,8 @@ static const char *get_actual_layername_from_filename(apr_pool_t *p, wmts_wrappe
     }
 
     // Only strip the trailing segment if it is a date appended by the time service (YYYYDDDhhmmss)
-    if (i != -1 && cfg && cfg->filename_date_regexp
-        && ap_regexec(cfg->filename_date_regexp, filename + i + 1, 0, NULL, 0) == 0) {
+    if (i != -1 && filename_date_regexp
+        && ap_regexec(filename_date_regexp, filename + i + 1, 0, NULL, 0) == 0) {
         strncpy(actual_layer_name, filename, i);    // Exclude date in actual layername
     } else {
         strncpy(actual_layer_name, filename, len);  // No date in filename, so just use full filename
@@ -367,7 +367,7 @@ static int handler(request_rec *r)
     wmts_wrapper_conf *wmts_cfg = (wmts_wrapper_conf *)ap_get_module_config(r->per_dir_config, &wmts_wrapper_module);
     int status = get_source_layername_from_date_service(r, wmts_cfg, layer_name, datetime_str, &prefix, &filename, &date_string);
     if (status != APR_SUCCESS) return status;
-    const char *actual_layer_name = get_actual_layername_from_filename(r->pool, wmts_cfg, filename);
+    const char *actual_layer_name = get_actual_layername_from_filename(r->pool, wmts_cfg ? wmts_cfg->filename_date_regexp : NULL, filename);
     sub_uri = (char *)find_and_replace_string(r->pool, "${layer_src}", sub_uri, actual_layer_name);
     sub_uri = (char *)find_and_replace_string(r->pool, "${date}", sub_uri, datetime_str);
     ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r, "After replace %s", sub_uri);
