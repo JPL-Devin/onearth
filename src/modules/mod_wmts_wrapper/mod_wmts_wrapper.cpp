@@ -338,7 +338,7 @@ static const char *remove_date_from_uri(apr_pool_t *p, apr_array_header_t *token
     return out_uri;
 }
 
-static const char *get_actual_layername_from_filename(apr_pool_t *p, wmts_wrapper_conf *cfg, const char *filename) {
+static const char *get_actual_layername_from_filename(apr_pool_t *p, ap_regex_t *filename_date_regexp, const char *filename) {
 
     int i, len = strlen(filename);
     char *actual_layer_name = (char *)apr_pcalloc(p, MAX_STRING_LEN);
@@ -350,8 +350,8 @@ static const char *get_actual_layername_from_filename(apr_pool_t *p, wmts_wrappe
     }
 
     // Only strip the trailing segment if it is a date appended by the time service (YYYYDDDhhmmss)
-    if (i != -1 && cfg->filename_date_regexp
-        && ap_regexec(cfg->filename_date_regexp, filename + i + 1, 0, NULL, 0) == 0) {
+    if (i != -1 && filename_date_regexp
+        && ap_regexec(filename_date_regexp, filename + i + 1, 0, NULL, 0) == 0) {
         strncpy(actual_layer_name, filename, i);    // Exclude date in actual layername
     } else {
         strncpy(actual_layer_name, filename, len);  // No date in filename, so just use full filename
@@ -878,7 +878,7 @@ static int pre_hook(request_rec *r)
                         ap_set_module_config(r->request_config, mrf_module, out_cfg);
                         // Add to response header
                         if (filename) {
-                            const char *actual_layer_name = get_actual_layername_from_filename(r->pool, cfg, filename);
+                            const char *actual_layer_name = get_actual_layername_from_filename(r->pool, cfg->filename_date_regexp, filename);
                             apr_table_set(r->notes, "Layer-Identifier-Actual", actual_layer_name);
                         }
                         if (datetime_str) {
