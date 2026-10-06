@@ -24,11 +24,10 @@ from oe_test_utils import file_text_replace, restart_apache, test_wmts_error, ma
 from optparse import OptionParser
 import shutil
 from subprocess import Popen, PIPE
-import redis
 import valkey
-import png
 import requests
 import time
+import png
 
 base_url = 'http://localhost'
 apache_conf_dir = '/etc/httpd/conf.d'
@@ -204,7 +203,7 @@ MOD_MRF_PALETTED_NODATE_APACHE_TEMPLATE = """<Directory {endpoint_path}/{layer_n
 <Directory {endpoint_path}/{layer_name}/default/{tilematrixset}>
     WMTSWrapperRole tilematrixset
     MRF_ConfigurationFile {config_file_path}
-    MRF_RegExp {layer_name}
+    MRF_RegExp {alias}
 </Directory>
 """
 
@@ -221,7 +220,7 @@ MOD_REPROJECT_PALETTED_NODATE_APACHE_TEMPLATE = """<Directory {endpoint_path}/{l
     WMTSWrapperRole tilematrixset
     Retile_ConfigurationFiles {src_config} {dest_config}
     Retile_RegExp {layer_name}
-    Retile_Source {src_path} {src_postfix}
+    Retile_Source {src_path} .png
 </Directory>
 """
 
@@ -975,120 +974,93 @@ class TestModWmtsWrapper(unittest.TestCase):
 
     @classmethod
     def setup_mrf_reproject_paletted(self):
-        size_x = 2048
-        size_y = 512
-        tile_size = 512
-        bands = 1
-        src_tilematrixset = '16km'
-        tilematrixset = 'GoogleMapsCompatible_Level3'
+        """Set up a small paletted source with one empty source page."""
         config_prefix = 'test_reproject_paletted'
-        test_imagery_path = os.path.join(os.getcwd(),
-                                         'mod_wmts_wrapper_test_data')
+        src_tilematrixset = '16km'
+        # Use the same registered test tile matrix set name as the other
+        # reproject tests. The generated source fixture is intentionally much
+        # smaller than the real Level3 grid.
+        tilematrixset = 'GoogleMapsCompatible_Level3'
+        test_imagery_path = os.path.join(
+            os.getcwd(), 'mod_wmts_wrapper_test_data')
+        source_path = '/{}/{}/default/{}'.format(
+            self.endpoint_prefix_mrf, config_prefix, src_tilematrixset)
 
-        # Paletted PNG source layer served by mod_mrf
-        empty_tile_dir = '/etc/onearth/empty_tiles'
-        make_dir_tree(empty_tile_dir, ignore_existing=True)
-        empty_tile_path = os.path.join(empty_tile_dir,
-                                       config_prefix + '_empty.png')
-        shutil.copy(
-            os.path.join(os.getcwd(), 'mrfgen_files', 'empty_tiles',
-                         'Blank_RGBA_512.png'), empty_tile_path)
+        mrf_layer_path = os.path.join(
+            self.endpoint_path, config_prefix, 'default', src_tilematrixset)
+        reproject_layer_path = os.path.join(
+            self.reproj_endpoint_path, config_prefix, 'default', tilematrixset)
+        make_dir_tree(mrf_layer_path, ignore_existing=True)
+        make_dir_tree(reproject_layer_path, ignore_existing=True)
 
-        mrf_layer_path = '{}/default/{}'.format(config_prefix,
-                                                src_tilematrixset)
-        self.mrf_endpoint_path_paletted = os.path.join(self.endpoint_path,
-                                                       mrf_layer_path)
-        mod_mrf_config_path = os.path.join(self.mrf_endpoint_path_paletted,
-                                           config_prefix + '.config')
-        apache_config = bulk_replace(
+        mrf_apache_config = bulk_replace(
             MOD_MRF_PALETTED_NODATE_APACHE_TEMPLATE,
-            [('{config_file_path}', mod_mrf_config_path),
-             ('{endpoint_path}', self.endpoint_path),
+            [('{endpoint_path}', self.endpoint_path),
              ('{layer_name}', config_prefix),
-             ('{tilematrixset}', src_tilematrixset)])
-
+             ('{tilematrixset}', src_tilematrixset),
+             ('{config_file_path}', os.path.join(
+                 mrf_layer_path, config_prefix + '.config')),
+             ('{alias}', self.endpoint_prefix_mrf)])
         self.mod_mrf_apache_config_path_paletted = os.path.join(
             apache_conf_dir, config_prefix + '_mrf.conf')
         with open(self.mod_mrf_apache_config_path_paletted, 'w+') as f:
-            f.write(apache_config)
+            f.write(mrf_apache_config)
 
-        make_dir_tree(self.mrf_endpoint_path_paletted, ignore_existing=True)
-        idx_path = os.path.join(self.mrf_endpoint_path_paletted,
-                                config_prefix + '.idx')
-        data_path = os.path.join(self.mrf_endpoint_path_paletted,
-                                 config_prefix + '.ppg')
-        shutil.copy(
-            os.path.join(test_imagery_path, config_prefix + '.idx'), idx_path)
-        shutil.copy(
-            os.path.join(test_imagery_path, config_prefix + '.ppg'), data_path)
+        idx_path = os.path.join(mrf_layer_path, config_prefix + '.idx')
+        data_path = os.path.join(mrf_layer_path, config_prefix + '.ppg')
+        shutil.copy(os.path.join(test_imagery_path,
+                                 'test_reproject_paletted.idx'), idx_path)
+        shutil.copy(os.path.join(test_imagery_path,
+                                 'test_reproject_paletted.ppg'), data_path)
+        empty_tile_path = '/etc/onearth/empty_tiles/'
+        make_dir_tree(empty_tile_path, ignore_existing=True)
+        empty_tile = os.path.join(empty_tile_path, config_prefix + '_empty.png')
+        shutil.copy(os.path.join(os.getcwd(), 'mrfgen_files', 'empty_tiles',
+                                 'Blank_RGBA_512.png'), empty_tile)
 
-        data_config = 'DataFile {}\n    EmptyTile {}'.format(
-            data_path, empty_tile_path)
-        mod_mrf_config = bulk_replace(
+        mrf_config = bulk_replace(
             MOD_MRF_CONFIG_TEMPLATE,
-            [('{size_x}', size_x), ('{size_y}', size_y),
-             ('{bands}', bands),
-             ('{tile_size_x}', tile_size), ('{tile_size_y}', tile_size),
-             ('{idx_path}', idx_path), ('{data_config}', data_config),
-             ('{skipped_levels}', '0' if size_x == size_y else '1')])
-        with open(mod_mrf_config_path, 'w+') as f:
-            f.write(mod_mrf_config)
+            [('{size_x}', 2048), ('{size_y}', 512), ('{bands}', 1),
+             ('{tile_size_x}', 512), ('{tile_size_y}', 512),
+             ('{idx_path}', idx_path), ('{data_config}', 'DataFile ' + data_path),
+             ('{skipped_levels}', '0')])
+        mrf_config += 'EmptyTile {}\n'.format(empty_tile)
+        with open(os.path.join(mrf_layer_path, config_prefix + '.config'), 'w+') as f:
+            f.write(mrf_config)
 
-        # mod_reproject layer on top of the paletted source
-        src_path = '/{}/{}/default/{}'.format(
-            self.endpoint_prefix_mrf, config_prefix, src_tilematrixset)
-        reproj_layer_path = '{}/default/{}'.format(config_prefix,
-                                                   tilematrixset)
-        self.reproj_endpoint_path_paletted = os.path.join(
-            self.reproj_endpoint_path, reproj_layer_path)
-        src_config_path = os.path.join(self.reproj_endpoint_path_paletted,
-                                       config_prefix + '_src.config')
-        dest_config_path = os.path.join(self.reproj_endpoint_path_paletted,
-                                        config_prefix + '_dest.config')
-        apache_config = bulk_replace(
+        reproject_apache_config = bulk_replace(
             MOD_REPROJECT_PALETTED_NODATE_APACHE_TEMPLATE,
-            [('{src_config}', src_config_path),
-             ('{dest_config}', dest_config_path),
-             ('{endpoint_path}', self.reproj_endpoint_path),
+            [('{endpoint_path}', self.reproj_endpoint_path),
              ('{layer_name}', config_prefix),
              ('{tilematrixset}', tilematrixset),
-             ('{src_postfix}', '.png'),
-             ('{src_path}', src_path)])
-
+             ('{src_config}', os.path.join(
+                 reproject_layer_path, config_prefix + '_src.config')),
+             ('{dest_config}', os.path.join(
+                 reproject_layer_path, config_prefix + '_dest.config')),
+             ('{src_path}', source_path)])
         self.mod_reproj_apache_config_path_paletted = os.path.join(
-            apache_conf_dir, config_prefix + '.conf')
+            apache_conf_dir, config_prefix + '_reproject.conf')
         with open(self.mod_reproj_apache_config_path_paletted, 'w+') as f:
-            f.write(apache_config)
+            f.write(reproject_apache_config)
 
-        make_dir_tree(self.reproj_endpoint_path_paletted, ignore_existing=True)
-        mod_reproj_src_config = bulk_replace(
+        src_config = bulk_replace(
             MOD_REPROJECT_SRC_CONFIG_TEMPLATE,
-            [('{size_x}', size_x), ('{size_y}', size_y),
-             ('{bands}', bands),
-             ('{tile_size_x}', tile_size), ('{tile_size_y}', tile_size),
-             ('{skipped_levels}', '0' if size_x == size_y else '1'),
-             ('{projection}', 'EPSG:4326'),
+            [('{size_x}', 2048), ('{size_y}', 512), ('{bands}', 1),
+             ('{tile_size_x}', 512), ('{tile_size_y}', 512),
+             ('{skipped_levels}', '0'), ('{projection}', 'EPSG:4326'),
              ('{bbox}', '-180.0,-90.0,180.0,90.0')])
-        with open(src_config_path, 'w+') as f:
-            f.write(mod_reproj_src_config)
-
-        reproj_size_x = 2048
-        reproj_size_y = 2048
-        reproj_tile_size = 256
-        mod_reproj_dest_config = bulk_replace(
+        src_config += 'Format image/png\n'
+        dest_config = bulk_replace(
             MOD_REPROJECT_DEST_CONFIG_TEMPLATE,
-            [('Nearest Off', 'Nearest On'),
-             ('{size_x}', reproj_size_x), ('{size_y}', reproj_size_y),
-             ('{bands}', bands),
-             ('{tile_size_x}', reproj_tile_size),
-             ('{tile_size_y}', reproj_tile_size),
-             ('{skipped_levels}', '0' if size_x == size_y else '1'),
-             ('{projection}', 'EPSG:3857'),
-             ('{bbox}',
-              '-20037508.34278925,-20037508.34278925,20037508.34278925,20037508.34278925'),
-             ('{mime}', 'image/png')])
-        with open(dest_config_path, 'w+') as f:
-            f.write(mod_reproj_dest_config)
+            [('{size_x}', 2048), ('{size_y}', 2048), ('{bands}', 1),
+             ('{tile_size_x}', 256), ('{tile_size_y}', 256),
+             ('{skipped_levels}', '1'), ('{projection}', 'EPSG:3857'),
+             ('{bbox}', '-20037508.34278925,-20037508.34278925,20037508.34278925,20037508.34278925'),
+             ('{mime}', 'image/png')]).replace('Nearest Off', 'Nearest On')
+        with open(os.path.join(reproject_layer_path, config_prefix + '_src.config'), 'w+') as f:
+            f.write(src_config)
+        with open(os.path.join(reproject_layer_path, config_prefix + '_dest.config'), 'w+') as f:
+            f.write(dest_config)
 
     @classmethod
     def setup_brunsli_source_mrf_date_yeardir(self):
@@ -2125,6 +2097,26 @@ class TestModWmtsWrapper(unittest.TestCase):
                 tile_url)
             self.assertTrue(check_tile_request(tile_url, test[1]), errstring)
 
+    def test_mod_reproject_paletted_empty_source_tile(self):
+        tile_url = (
+            'http://localhost/mod_wmts_wrapper_reproject/'
+            'test_reproject_paletted/default/GoogleMapsCompatible_Level3/0/0/0.png')
+        response = requests.get(tile_url)
+        self.assertEqual(response.status_code, 200)
+
+        width, height, rows, info = png.Reader(bytes=response.content).read()
+        self.assertEqual((width, height), (256, 256))
+        self.assertEqual(info['planes'], 1)
+        self.assertEqual(info['bitdepth'], 8)
+
+        # The source fixture contains one data page and one empty page. The
+        # empty page must be written with its transparent palette index (255),
+        # not zero, which is opaque white in this fixture's palette.
+        pixels = {pixel for row in rows for pixel in row}
+        self.assertIn(1, pixels)
+        self.assertIn(255, pixels)
+        self.assertNotIn(0, pixels)
+
     def test_mod_mrf_date_out_of_range(self):
         for test in [('2000-01-01','2020-01-01')]:
             tile_url = 'http://localhost/mod_wmts_wrapper_mrf/test_mrf_date/default/{}/16km/0/0/0.jpg'.format(
@@ -2157,21 +2149,6 @@ class TestModWmtsWrapper(unittest.TestCase):
                 tile_url)
             self.assertTrue(check_tile_request(tile_url, test[1]), errstring)
             
-
-    def test_mod_reproject_paletted_empty_source_tile(self):
-        # An empty source page must reproject to the transparent palette
-        # index, not to opaque white (index 0).
-        tile_url = 'http://localhost/mod_wmts_wrapper_reproject/test_reproject_paletted/default/GoogleMapsCompatible_Level3/0/0/0.png'
-        r = requests.get(tile_url)
-        self.assertEqual(r.status_code, 200,
-                         'Tile at URL:{} returned {}'.format(tile_url, r.status_code))
-        _, _, rows, _ = png.Reader(bytes=r.content).read()
-        pixels = set()
-        for row in rows:
-            pixels.update(row)
-        self.assertIn(1, pixels)
-        self.assertIn(255, pixels)
-        self.assertNotIn(0, pixels)
 
     def test_zenjpeg_source_mrf_date_yeardir_tile(self):
         tile_url = 'http://localhost/mod_wmts_wrapper_mrf/test_zenjpeg_convert_mrf_date_yeardir_ZENJPEG/default/2012-02-22/2km/0/0/0.jpg'
