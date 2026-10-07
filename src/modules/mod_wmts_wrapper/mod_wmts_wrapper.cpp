@@ -338,7 +338,7 @@ static const char *remove_date_from_uri(apr_pool_t *p, apr_array_header_t *token
     return out_uri;
 }
 
-static const char *get_actual_layername_from_filename(apr_pool_t *p, ap_regex_t *filename_date_regexp, const char *filename) {
+static const char *get_actual_layername_from_filename(apr_pool_t *p, const char *filename) {
 
     int i, len = strlen(filename);
     char *actual_layer_name = (char *)apr_pcalloc(p, MAX_STRING_LEN);
@@ -350,8 +350,15 @@ static const char *get_actual_layername_from_filename(apr_pool_t *p, ap_regex_t 
     }
 
     // Only strip the trailing segment if it is a date appended by the time service (YYYYDDDhhmmss)
-    if (i != -1 && filename_date_regexp
-        && ap_regexec(filename_date_regexp, filename + i + 1, 0, NULL, 0) == 0) {
+    int is_date = 0;
+    if (i != -1) {
+        const char *suffix = filename + i + 1;
+        is_date = (strlen(suffix) == 13);
+        for (int j = 0; is_date && j < 13; j++) {
+            if (suffix[j] < '0' || suffix[j] > '9') is_date = 0;
+        }
+    }
+    if (is_date) {
         strncpy(actual_layer_name, filename, i);    // Exclude date in actual layername
     } else {
         strncpy(actual_layer_name, filename, len);  // No date in filename, so just use full filename
@@ -878,7 +885,7 @@ static int pre_hook(request_rec *r)
                         ap_set_module_config(r->request_config, mrf_module, out_cfg);
                         // Add to response header
                         if (filename) {
-                            const char *actual_layer_name = get_actual_layername_from_filename(r->pool, cfg->filename_date_regexp, filename);
+                            const char *actual_layer_name = get_actual_layername_from_filename(r->pool, filename);
                             apr_table_set(r->notes, "Layer-Identifier-Actual", actual_layer_name);
                         }
                         if (datetime_str) {
@@ -995,10 +1002,6 @@ static const char *set_module(cmd_parms *cmd, void *dconf, const char *role)
     if (ap_regcomp(cfg->date_regexp, pattern, 0)) {
         return "Error -- bad date regexp";
     }
-    cfg->filename_date_regexp = (ap_regex_t *)apr_palloc(cmd->pool, sizeof(ap_regex_t));
-    if (ap_regcomp(cfg->filename_date_regexp, "^[0-9]{13}$", 0)) {
-        return "Error -- bad filename date regexp";
-    }
     return NULL;    
 }
 
@@ -1076,7 +1079,6 @@ static void* merge_dir_conf(apr_pool_t *p, void *BASE, void *ADD) {
     cfg->role = ( add->role == NULL ) ? base->role : add->role;
     cfg->time = ( add->time == NULL ) ? base->time : add->time;
     cfg->date_regexp = ( add->date_regexp == NULL ) ? base->date_regexp : add->date_regexp;
-    cfg->filename_date_regexp = ( add->filename_date_regexp == NULL ) ? base->filename_date_regexp : add->filename_date_regexp;
     cfg->mime_type = ( add->mime_type == NULL ) ? base->mime_type : add->mime_type;
     cfg->time_lookup_uri = ( add->time_lookup_uri == NULL ) ? base->time_lookup_uri : add->time_lookup_uri;
     cfg->year_dir = ( add->year_dir == NULL ) ? base->year_dir : add->year_dir;
